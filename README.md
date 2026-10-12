@@ -1,5 +1,8 @@
 # Slush Filmmaker
 
+<img width="1674" height="712" alt="pi" src="https://github.com/user-attachments/assets/485ab9ea-8046-4c00-bbc6-e91c0f5493d0" />
+
+
 **A browser-native film studio where founders turn one idea (or one photo) into a watchable film, co-editing with an AI agent on the same timeline.**
 
 No desktop app. No render farm. No separate agent sandbox. Everything runs in the browser — the founder and the AI share one visible studio, one timeline, one source of truth.
