@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useRef } from 'react';
 import { isTemplateAvailable, templates } from './shared';
-import { hasOpenAIKey, requireOpenAIKey } from './keys';
-import { STUDIO_TABS, type StoryboardProposal, type StudioTab, type WebsiteBrief } from './studio-actions';
+import { hasOpenAIKey, requireFalKey, requireOpenAIKey } from './keys';
+import { STUDIO_TABS, type Scene, type StoryboardProposal, type StudioTab, type WebsiteBrief } from './studio-actions';
 
 type Tool = {
   name: string;
@@ -40,6 +40,7 @@ export type WebMCPActions = {
   openSettings?: () => void;
   setTab?: (tab: StudioTab) => void;
   newProject?: () => unknown;
+  setSceneImage?: (sceneId: string, imageUrl: string) => unknown;
 };
 
 function shouldIgnoreRegisterError(error: unknown) {
@@ -96,6 +97,17 @@ async function proposeStoryboardRemote(input: {
   };
   if (!res.ok || !data.proposal) throw new Error(data.error || 'Storyboard proposal failed');
   return data.proposal;
+}
+
+async function generateSceneImageRemote(input: { key: string; prompt: string; sceneTitle?: string }) {
+  const res = await fetch('/api/fal/generate-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = (await res.json().catch(() => ({}))) as { error?: string; imageUrl?: string; model?: string };
+  if (!res.ok || !data.imageUrl) throw new Error(data.error || 'Image generation failed');
+  return { imageUrl: data.imageUrl, model: data.model };
 }
 
 export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true) {
@@ -208,7 +220,7 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
       tools.push({
         name: 'open_studio_tab',
         description:
-          'Switch the visible studio sidebar view. Use while chatting to take the founder to the right place (e.g. Projects, Templates, Overview). Effect: write (UI navigation).',
+          'Switch the visible studio sidebar view. Use while chatting to take the founder to the right place (e.g. Projects, Editor, Templates, Overview). Effect: write (UI navigation).',
         inputSchema: {
           type: 'object',
           properties: { tab: { type: 'string', enum: [...STUDIO_TABS] } },
@@ -236,6 +248,66 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
           ref.current.setTab?.('Overview');
           ref.current.setNotice?.('New project started.');
           return result;
+        },
+      });
+    }
+
+    if (ref.current.getState && ref.current.setSceneImage) {
+      tools.push({
+        name: 'generate_scene_image',
+        description:
+          'Paid/fal.ai: generate a cinematic still for a storyboard scene and apply it in the visible Assets/Editor UI. Requires fal.ai BYOK. Defaults to the selected scene; prompt defaults from title+caption. Effect: write + paid.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sceneId: { type: 'string' },
+            prompt: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+        execute: async (input) => {
+          if (!ref.current.setSceneImage || !ref.current.getState) {
+            throw new Error('generate_scene_image unavailable');
+          }
+          let key: string;
+          try {
+            key = requireFalKey();
+          } catch {
+            ref.current.openSettings?.();
+            throw new Error('fal_byok_required');
+          }
+
+          const state = ref.current.getState() as {
+            scenes?: Scene[];
+            selectedSceneId?: string;
+          };
+          const scenes = Array.isArray(state.scenes) ? state.scenes : [];
+          const sceneId = String(input.sceneId || state.selectedSceneId || scenes[0]?.id || '');
+          const scene = scenes.find((s) => s.id === sceneId);
+          if (!scene) throw new Error('Scene not found — call get_studio_state first');
+
+          const prompt =
+            String(input.prompt || '').trim() ||
+            `${scene.title}. ${scene.caption}`.trim();
+
+          const generated = await generateSceneImageRemote({
+            key,
+            prompt,
+            sceneTitle: scene.title,
+          });
+          ref.current.setSceneImage(scene.id, generated.imageUrl);
+          ref.current.selectScene?.(scene.id);
+          ref.current.setTab?.('Assets');
+          ref.current.pushActivity?.(`Generated image for ${scene.title}.`);
+          ref.current.setNotice?.(`New still applied to ${scene.title}.`);
+          return {
+            effect: 'generate_image',
+            sceneId: scene.id,
+            title: scene.title,
+            prompt,
+            imageUrl: generated.imageUrl,
+            model: generated.model,
+          };
         },
       });
     }
@@ -333,6 +405,13 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
       if (!tool) {
         if (['analyze_website', 'propose_storyboard', 'review_proposal', 'apply_proposal'].includes(name) && !hasOpenAIKey()) {
           throw new Error('byok_required');
+        }
+        if (name === 'generate_scene_image') {
+          try {
+            requireFalKey();
+          } catch {
+            throw new Error('fal_byok_required');
+          }
         }
         throw new Error(`WebMCP tool "${name}" not found`);
       }

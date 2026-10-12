@@ -25,6 +25,7 @@ export type StudioSnapshot = {
   brief?: WebsiteBrief | null;
   pendingProposal?: StoryboardProposal | null;
   agentified?: boolean;
+  falConnected?: boolean;
   tab?: StudioTab;
 };
 
@@ -42,6 +43,8 @@ type ToolActions = {
   setNotice?: (text: string) => void;
   setTab?: (tab: StudioTab) => void;
   newProject?: () => unknown;
+  setSceneImage?: (sceneId: string, imageUrl: string) => unknown;
+  openSettings?: () => void;
 };
 
 async function runTool(name: string, args: Record<string, unknown>, fallback: ToolActions) {
@@ -105,6 +108,7 @@ async function runTool(name: string, args: Record<string, unknown>, fallback: To
         return fallback.applyProposal(String(args.proposalId));
       case 'analyze_website':
       case 'propose_storyboard':
+      case 'generate_scene_image':
         // These require network + BYOK; surface the original error
         return { error: msg || `Tool ${name} failed` };
       default:

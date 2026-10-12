@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isTemplateAvailable, photos, templates } from '@/components/shared';
-import { getOpenAIKey, hasOpenAIKey } from '@/components/keys';
+import { getOpenAIKey, hasFalKey, hasOpenAIKey } from '@/components/keys';
 
 export type Scene = {
   id: string;
@@ -39,9 +39,9 @@ export type StoryboardProposal = {
   brief?: WebsiteBrief | Record<string, unknown> | string;
 };
 
-export type StudioTab = 'Overview' | 'Templates' | 'Projects' | 'Assets' | 'Docs';
+export type StudioTab = 'Overview' | 'Templates' | 'Projects' | 'Editor' | 'Assets' | 'Docs';
 
-export const STUDIO_TABS: StudioTab[] = ['Overview', 'Templates', 'Projects', 'Assets', 'Docs'];
+export const STUDIO_TABS: StudioTab[] = ['Overview', 'Templates', 'Projects', 'Editor', 'Assets', 'Docs'];
 
 export type StudioStateSnapshot = {
   project: string;
@@ -54,6 +54,7 @@ export type StudioStateSnapshot = {
   pendingProposal: StoryboardProposal | null;
   hasByok: boolean;
   agentified: boolean;
+  falConnected: boolean;
   mode: 'local-demo';
   tab?: StudioTab;
 };
@@ -176,9 +177,18 @@ export function useStudioProject() {
       pendingProposal: pendingRef.current,
       hasByok: byok,
       agentified: byok,
+      falConnected: hasFalKey(),
       mode: 'local-demo',
     };
   }, [project, template, scenes, selected, website, activity, brief, openaiKey]);
+
+  const setSceneImage = useCallback((sceneId: string, imageUrl: string) => {
+    const exists = scenesRef.current.some((s) => s.id === sceneId);
+    if (!exists) throw new Error('Scene not found');
+    setScenes((all) => all.map((s) => (s.id === sceneId ? { ...s, image: imageUrl } : s)));
+    setSelected(sceneId);
+    return { status: 'image_applied' as const, sceneId, imageUrl };
+  }, []);
 
   const setPendingProposalAction = useCallback((proposal: StoryboardProposal | null) => {
     pendingRef.current = proposal;
@@ -275,6 +285,7 @@ export function useStudioProject() {
     syncKey,
     pushActivity,
     selectScene,
+    setSceneImage,
     chooseTemplate,
     getState,
     newProject,

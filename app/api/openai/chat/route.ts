@@ -13,7 +13,7 @@ type ChatMessage = {
 };
 
 const TEMPLATE_ENUM = ['founder', 'pitch', 'launch', 'update'] as const;
-const STUDIO_TAB_ENUM = ['Overview', 'Templates', 'Projects', 'Assets', 'Docs'] as const;
+const STUDIO_TAB_ENUM = ['Overview', 'Templates', 'Projects', 'Editor', 'Assets', 'Docs'] as const;
 
 const TOOLS = [
   {
@@ -64,7 +64,7 @@ const TOOLS = [
     function: {
       name: 'open_studio_tab',
       description:
-        'Switch the visible studio sidebar view so the founder sees the right place while chatting (Overview, Templates, Projects, Assets, Docs).',
+        'Switch the visible studio sidebar view so the founder sees the right place while chatting (Overview, Templates, Projects, Editor, Assets, Docs).',
       parameters: {
         type: 'object',
         properties: { tab: { type: 'string', enum: [...STUDIO_TAB_ENUM] } },
@@ -149,6 +149,22 @@ const TOOLS = [
         type: 'object',
         properties: { proposalId: { type: 'string' } },
         required: ['proposalId'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'generate_scene_image',
+      description:
+        'Paid/fal.ai: generate a cinematic still for a storyboard scene and apply it in the UI. Requires fal.ai key (falConnected). Defaults to selected scene; prompt defaults from title+caption.',
+      parameters: {
+        type: 'object',
+        properties: {
+          sceneId: { type: 'string' },
+          prompt: { type: 'string' },
+        },
         additionalProperties: false,
       },
     },

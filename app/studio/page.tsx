@@ -23,6 +23,7 @@ import {
   KeyRound,
   SlidersHorizontal,
   ChevronDown,
+  Clapperboard,
 } from 'lucide-react';
 import { Logo, photos, templates, TemplateCards, Preview } from '@/components/shared';
 import { useWebMCP, callWebMCPTool } from '@/components/webmcp';
@@ -30,12 +31,14 @@ import { getFalKey, getOpenAIKey, setFalKey, setOpenAIKey, hasFalKey, hasOpenAIK
 import { chatWithSophie } from '@/components/sophie-chat';
 import { SOPHIE_STARTER } from '@/prompts/sophie';
 import { useStudioProject, type StudioTab } from '@/components/studio-actions';
+import { EditorClipsPanel, EditorInspector, ProjectEditor } from '@/components/project-editor';
 
 type ChatMsg = { id: string; role: 'user' | 'assistant' | 'system'; text: string };
 const tabs = [
   { name: 'Overview' as const, icon: Home },
   { name: 'Templates' as const, icon: LayoutGrid },
   { name: 'Projects' as const, icon: Folder },
+  { name: 'Editor' as const, icon: Clapperboard },
   { name: 'Assets' as const, icon: ImageIcon },
   { name: 'Docs' as const, icon: BookOpen },
 ];
@@ -63,6 +66,7 @@ export default function Studio() {
     syncKey,
     pushActivity,
     selectScene,
+    setSceneImage,
     chooseTemplate,
     getState,
     setBrief,
@@ -144,6 +148,7 @@ export default function Studio() {
         setLeftOpen(false);
       },
       newProject,
+      setSceneImage,
     },
     agentified,
   );
@@ -213,6 +218,7 @@ export default function Studio() {
           brief: snap.brief,
           pendingProposal: snap.pendingProposal,
           agentified: snap.agentified,
+          falConnected: snap.falConnected,
           tab,
         },
         actions: {
@@ -220,7 +226,7 @@ export default function Studio() {
           preview: setPreview,
           selectScene: (id) => {
             selectScene(id);
-            setTab('Overview');
+            setTab('Editor');
           },
           start: onChooseTemplate,
           setWebsite,
@@ -235,6 +241,8 @@ export default function Studio() {
             setLeftOpen(false);
           },
           newProject,
+          setSceneImage,
+          openSettings: () => setSettings(true),
         },
       });
       setChat((c) => [...c, { id: `a-${Date.now()}`, role: 'assistant', text: reply }]);
@@ -251,12 +259,13 @@ export default function Studio() {
   function saveConnection() {
     setOpenAIKey(keyDraft);
     setFalKey(falDraft);
-    setFalConnected(Boolean(falDraft.trim()));
+    const falOk = falDraft.trim().length >= 16;
+    setFalConnected(falOk);
     syncKey(keyDraft.trim());
     setSettings(false);
     const parts = [
       keyDraft.trim() ? 'OpenAI' : '',
-      falDraft.trim() ? 'fal.ai' : '',
+      falOk ? 'fal.ai' : '',
     ].filter(Boolean);
     setNotice(parts.length ? `${parts.join(' + ')} saved in this browser.` : 'API keys cleared.');
     pushActivity(
@@ -266,9 +275,11 @@ export default function Studio() {
     );
   }
 
+  const inEditor = tab === 'Editor';
+
   return (
-    <div className="studio-shell">
-      <aside className={`left-sidebar ${leftOpen ? 'visible' : ''}`}>
+    <div className={`studio-shell ${inEditor ? 'editor-mode' : ''}`}>
+      <aside className={`left-sidebar ${inEditor ? 'editor-left' : ''} ${leftOpen ? 'visible' : ''}`}>
         <Logo />
         <div className="workspace-tag">
           <span className="status-dot" /> YOUR CREATIVE SPACE
@@ -289,21 +300,35 @@ export default function Studio() {
             </button>
           ))}
         </nav>
+        {inEditor && (
+          <>
+            <button type="button" className="editor-project-chip" onClick={() => setTab('Projects')}>
+              <img src={scenes[0]?.image || photos.earth} alt="" />
+              <span>
+                <b>{project}</b>
+                <small>{scenes.length} scenes · local</small>
+              </span>
+            </button>
+            <EditorClipsPanel scenes={scenes} selected={selected} onSelect={selectScene} />
+          </>
+        )}
         <div className="sidebar-bottom">
-          <div className="sidebar-promo">
-            <img src={photos.stage} alt="Red stage lights" />
-            <div>
-              <span className="eyebrow">BUILT FOR THE BOLD</span>
-              <h3>
-                Ideas deserve
-                <br />
-                an audience.
-              </h3>
-              <Link href="/">
-                Explore Slush Filmmaker <ArrowUpRight size={14} />
-              </Link>
+          {!inEditor && (
+            <div className="sidebar-promo">
+              <img src={photos.stage} alt="Red stage lights" />
+              <div>
+                <span className="eyebrow">BUILT FOR THE BOLD</span>
+                <h3>
+                  Ideas deserve
+                  <br />
+                  an audience.
+                </h3>
+                <Link href="/">
+                  Explore Slush Filmmaker <ArrowUpRight size={14} />
+                </Link>
+              </div>
             </div>
-          </div>
+          )}
           <button className="workspace-user" onClick={() => setSettings(true)}>
             <span className="user-avatar">Y</span>
             <span>
@@ -315,8 +340,8 @@ export default function Studio() {
         </div>
       </aside>
 
-      <div className="studio-main">
-        <header className="studio-topbar">
+      <div className={`studio-main ${inEditor ? 'editor-mode-main' : ''}`}>
+        <header className={`studio-topbar ${inEditor ? 'editor-hidden' : ''}`}>
           <button className="icon-button sidebar-toggle" onClick={() => setLeftOpen(!leftOpen)} aria-label="Toggle navigation">
             <PanelLeftClose size={19} />
           </button>
@@ -336,7 +361,7 @@ export default function Studio() {
           </div>
         </header>
 
-        <div className="studio-content">
+        <div className={`studio-content ${inEditor ? 'editor-fill' : ''}`}>
           {tab === 'Overview' && (
             <>
               <section className="studio-hero">
@@ -498,7 +523,7 @@ export default function Studio() {
             <section className="dashboard-section">
               <div className="eyebrow">YOUR WORK</div>
               <h1>Stories in the making.</h1>
-              <button className="project-card" onClick={() => setTab('Overview')}>
+              <button className="project-card" onClick={() => setTab('Editor')}>
                 <img src={scenes[0].image} alt="Project cover" />
                 <div>
                   <h3>{project}</h3>
@@ -511,18 +536,32 @@ export default function Studio() {
             </section>
           )}
 
+          {tab === 'Editor' && (
+            <ProjectEditor
+              project={project}
+              scenes={scenes}
+              selected={selected}
+              onSelect={selectScene}
+              onProjectChange={setProject}
+            />
+          )}
+
           {tab === 'Assets' && (
             <section className="dashboard-section">
               <div className="eyebrow">YOUR VISUAL WORLD</div>
               <h1>The building blocks.</h1>
-              <p>Demo imagery used in your storyboard.</p>
+              <p>
+                {falConnected
+                  ? 'Scene stills — ask Sophie to generate, or tap a card to edit.'
+                  : 'Demo imagery for now. Connect fal.ai to generate stills with Sophie.'}
+              </p>
               <div className="asset-grid">
                 {scenes.map((s) => (
                   <button
                     key={s.id}
                     onClick={() => {
                       selectScene(s.id);
-                      setTab('Overview');
+                      setTab('Editor');
                     }}
                   >
                     <img src={s.image} alt={s.title} />
@@ -546,8 +585,8 @@ export default function Studio() {
               </p>
               <h3>02 — Paste a key to agentify</h3>
               <p>
-                Connect an OpenAI key to unlock Sophie chat and WebMCP tools: analyze_website, propose_storyboard,
-                review_proposal, and apply_proposal. Human and agent share the same workspace.
+                Connect an OpenAI key to unlock Sophie chat and WebMCP story tools. Add fal.ai for
+                generate_scene_image. Human and agent share the same workspace.
               </p>
               <h3>03 — What’s live vs next</h3>
               <p>
@@ -557,9 +596,11 @@ export default function Studio() {
             </section>
           )}
 
-          <div className="studio-bottom-note">
-            MADE FOR FOUNDERS. BUILT FOR THE FIRST TAKE. <span>SLUSH FILMMAKER</span>
-          </div>
+          {!inEditor && (
+            <div className="studio-bottom-note">
+              MADE FOR FOUNDERS. BUILT FOR THE FIRST TAKE. <span>SLUSH FILMMAKER</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -589,6 +630,10 @@ export default function Studio() {
             </button>
           </div>
         </div>
+
+        {inEditor && scene && (
+          <EditorInspector scene={scene} sceneIndex={scenes.indexOf(scene)} sceneCount={scenes.length} />
+        )}
 
         {detailsOpen && (
           <div className="agent-details">
@@ -746,9 +791,9 @@ export default function Studio() {
               <KeyRound size={22} />
               <p>
                 {keyDraft.trim() && falDraft.trim()
-                  ? 'Both keys ready. OpenAI unlocks story tools; fal.ai waits for generation tools.'
+                  ? 'Both keys ready. OpenAI unlocks Sophie; fal.ai unlocks generate_scene_image.'
                   : keyDraft.trim()
-                    ? 'OpenAI unlocks analyze_website / propose_storyboard. Add fal.ai for generation.'
+                    ? 'OpenAI unlocks Sophie + story tools. Add fal.ai to generate stills.'
                     : falDraft.trim()
                       ? 'fal.ai saved — still need OpenAI to agentify Sophie.'
                       : 'Optional BYOK. Leave blank to keep exploring the demo.'}
