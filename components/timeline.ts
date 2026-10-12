@@ -100,114 +100,44 @@ export function totalDuration(scenes: Scene[]) {
   return scenes.reduce((n, s) => n + s.duration, 0);
 }
 
-/** Place A/V clips on the classic founder beats (by scene index). */
+/** Legacy demo clip ids — never re-seed these into the Editor. */
+const SEED_CLIP_IDS = new Set([
+  'clip-founder-acam',
+  'clip-founder-close',
+  'clip-product-ui',
+  'clip-broll-world',
+  'clip-broll-crowd',
+  'clip-title-open',
+  'clip-title-end',
+  'clip-vo-arc',
+  'clip-music-1',
+  'clip-sfx-turn',
+  'clip-sfx-resolve',
+]);
+
+/** Empty track shells + captions derived from scenes. No fake A/V clips. */
 export function buildInitialTracks(scenes: Scene[]): TimelineTrack[] {
-  const placed = sceneTimeline(scenes);
-  const total = Math.max(1, totalDuration(scenes));
-  const at = (i: number) => placed[i] || placed[placed.length - 1];
-  const caps = placed.map((s) => ({
-    id: `cap-${s.id}`,
-    label: 'CC',
-    start: s.start,
-    duration: s.duration,
-    sceneId: s.id,
-  }));
+  return syncDerivedTracks(
+    TRACK_DEFS.map((def) => ({ ...def, clips: [] as TimelineClip[] })),
+    scenes,
+  );
+}
 
-  // Indices assume founder arc: 0 Hook · 1 Problem · 2 Founder · 3 Product · 4 Ask
-  const hook = at(0);
-  const problem = at(1);
-  const founder = at(2);
-  const product = at(3);
-  const ask = at(Math.min(4, placed.length - 1));
-
-  const defaults: Record<string, TimelineClip[]> = {
-    founder: [
-      {
-        id: 'clip-founder-acam',
-        label: 'Founder A-cam',
-        start: founder.start,
-        duration: founder.duration + Math.min(2, ask.duration * 0.25),
-        sceneId: founder.id,
-      },
-      {
-        id: 'clip-founder-close',
-        label: 'Founder close',
-        start: ask.start + ask.duration * 0.15,
-        duration: Math.max(3, ask.duration * 0.55),
-        sceneId: ask.id,
-      },
-    ],
-    product: [
-      {
-        id: 'clip-product-ui',
-        label: 'Product UI',
-        start: product.start + 0.4,
-        duration: Math.max(4, product.duration - 0.8),
-        sceneId: product.id,
-      },
-    ],
-    broll: [
-      {
-        id: 'clip-broll-world',
-        label: 'Broken world',
-        start: problem.start,
-        duration: problem.duration,
-        sceneId: problem.id,
-      },
-      {
-        id: 'clip-broll-crowd',
-        label: 'Stage / crowd',
-        start: ask.start,
-        duration: ask.duration,
-        sceneId: ask.id,
-      },
-    ],
-    titles: [
-      {
-        id: 'clip-title-open',
-        label: 'Open title',
-        start: hook.start,
-        duration: Math.min(hook.duration, 4),
-        sceneId: hook.id,
-      },
-      {
-        id: 'clip-title-end',
-        label: 'End card',
-        start: ask.start + Math.max(0, ask.duration - 4),
-        duration: Math.min(4, ask.duration),
-        sceneId: ask.id,
-      },
-    ],
-    vo: [
-      {
-        id: 'clip-vo-arc',
-        label: 'Founder VO',
-        start: Math.min(0.6, total * 0.02),
-        duration: Math.max(total - 1.2, 8),
-      },
-    ],
-    music: [{ id: 'clip-music-1', label: 'Underscore', start: 0, duration: total }],
-    sfx: [
-      {
-        id: 'clip-sfx-turn',
-        label: 'Turn hit',
-        start: Math.max(0, founder.start - 0.15),
-        duration: 1.2,
-      },
-      {
-        id: 'clip-sfx-resolve',
-        label: 'Resolve hit',
-        start: Math.max(0, ask.start - 0.1),
-        duration: 1.4,
-      },
-    ],
-  };
-
-  return TRACK_DEFS.map((def) => {
-    if (def.id === 'scenes') return { ...def, clips: [] };
-    if (def.id === 'captions') return { ...def, clips: caps };
-    return { ...def, clips: defaults[def.id] || [] };
+/** Drop legacy hardcoded seed clips; keep real agent/user upserts. */
+export function sanitizeTracks(tracks: TimelineTrack[], scenes: Scene[]): TimelineTrack[] {
+  const byId = new Map(tracks.map((t) => [t.id, t]));
+  const shells: TimelineTrack[] = TRACK_DEFS.map((def) => {
+    const existing = byId.get(def.id);
+    if (!existing) return { ...def, clips: [] as TimelineClip[] };
+    if (def.id === 'scenes' || def.id === 'captions') {
+      return { ...def, clips: [] };
+    }
+    return {
+      ...def,
+      clips: existing.clips.filter((c) => !SEED_CLIP_IDS.has(c.id)),
+    };
   });
+  return syncDerivedTracks(shells, scenes);
 }
 
 export function syncDerivedTracks(tracks: TimelineTrack[], scenes: Scene[]): TimelineTrack[] {

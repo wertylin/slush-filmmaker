@@ -23,6 +23,7 @@ FAL_AI_KEY=
 1. Paste OpenAI key in **Connections** → Sophie + website/storyboard tools unlock
 2. Paste fal.ai key → scene still generation
 3. Chat Sophie: analyze site, propose storyboard, edit timeline, start a new project (lands in **Editor**)
+4. **Export** in Editor → downloads a WebM of scene stills + captions
 
 ## Stack
 

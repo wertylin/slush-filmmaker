@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 import {
   ArrowUpRight,
   Home,
@@ -24,6 +24,7 @@ import {
   SlidersHorizontal,
   ChevronDown,
   Clapperboard,
+  Upload,
 } from 'lucide-react';
 import { Logo, photos, TemplateCards, Preview } from '@/components/shared';
 import { getCachedTemplates } from '@/lib/templates';
@@ -33,7 +34,8 @@ import { chatWithSophie } from '@/components/sophie-chat';
 import { SOPHIE_STARTER } from '@/prompts/sophie';
 import { useStudioProject, type StudioTab } from '@/components/studio-actions';
 import { EditorClipsPanel, EditorInspector, ProjectEditor } from '@/components/project-editor';
-import { fetchBlocks, mergeAssetLibrary, readLocalSources, type Block } from '@/lib/blocks';
+import { addAssetSource, fetchBlocks, mergeAssetLibrary, readLocalSources, type Block } from '@/lib/blocks';
+import { durableImageUrl, ingestMediaFile, pickMediaFiles } from '@/lib/ingest-media';
 
 type ChatMsg = { id: string; role: 'user' | 'assistant' | 'system'; text: string };
 const tabs = [
@@ -72,6 +74,7 @@ export default function Studio() {
     pushActivity,
     selectScene,
     setSceneImage,
+    applySceneMedia,
     addGeneratedSource,
     chooseTemplate,
     getState,
@@ -103,6 +106,10 @@ export default function Studio() {
   const [analyzeBusy, setAnalyzeBusy] = useState(false);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [blocksTick, setBlocksTick] = useState(0);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [assetDragging, setAssetDragging] = useState(false);
+  const assetFileRef = useRef<HTMLInputElement>(null);
+  const assetDragDepth = useRef(0);
 
   useEffect(() => {
     setKeyDraft(openaiKey || getOpenAIKey());
@@ -115,7 +122,7 @@ export default function Studio() {
   }, []);
 
   useEffect(() => {
-    if (tab !== 'Assets') return;
+    if (tab !== 'Assets' && tab !== 'Editor') return;
     let cancelled = false;
     void fetchBlocks().then((rows) => {
       if (cancelled) return;
@@ -268,6 +275,64 @@ export default function Studio() {
     }
   }
 
+  async function uploadAssetFiles(fileList: FileList | File[] | null | undefined) {
+    const files = pickMediaFiles(fileList);
+    if (!files.length) {
+      setNotice('Pick an image or video file');
+      return;
+    }
+    setUploadBusy(true);
+    try {
+      let added = 0;
+      for (const file of files) {
+        const media = await ingestMediaFile(file);
+        const image = await durableImageUrl(media.imageUrl);
+        const label = media.fileName.replace(/\.[^.]+$/, '') || media.fileName;
+        const source = await addAssetSource({
+          image,
+          description: label,
+          caption: media.kind === 'video' ? `Uploaded video · ${media.fileName}` : `Uploaded · ${media.fileName}`,
+          duration: media.durationHint,
+          prompt: label,
+        });
+        setBlocks((prev) => mergeAssetLibrary(prev, [source, ...readLocalSources()]));
+        added += 1;
+      }
+      setBlocksTick((n) => n + 1);
+      setNotice(added === 1 ? 'Source added to Assets.' : `${added} sources added to Assets.`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploadBusy(false);
+      if (assetFileRef.current) assetFileRef.current.value = '';
+    }
+  }
+
+  function onAssetDragEnter(e: DragEvent) {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    assetDragDepth.current += 1;
+    setAssetDragging(true);
+  }
+
+  function onAssetDragOver(e: DragEvent) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }
+
+  function onAssetDragLeave(e: DragEvent) {
+    e.preventDefault();
+    assetDragDepth.current = Math.max(0, assetDragDepth.current - 1);
+    if (assetDragDepth.current === 0) setAssetDragging(false);
+  }
+
+  function onAssetDrop(e: DragEvent) {
+    e.preventDefault();
+    assetDragDepth.current = 0;
+    setAssetDragging(false);
+    void uploadAssetFiles(e.dataTransfer.files);
+  }
+
   async function send() {
     const text = message.trim();
     if (!text || chatBusy) return;
@@ -394,7 +459,45 @@ export default function Studio() {
                 <small>{scenes.length} scenes · local</small>
               </span>
             </button>
-            <EditorClipsPanel scenes={scenes} selected={selected} onSelect={selectScene} />
+            <EditorClipsPanel
+              assets={blocks}
+              scenes={scenes}
+              selected={selected}
+              onNotice={setNotice}
+              onApplyAsset={(asset) => {
+                const target = scenes.find((s) => s.id === selected) || scenes[0];
+                if (!target) {
+                  setNotice('No scene to apply media to.');
+                  return;
+                }
+                setSceneImage(target.id, asset.image);
+                selectScene(target.id);
+                setNotice(`“${asset.description}” → ${target.title}.`);
+              }}
+              onReplaceMedia={async (media) => {
+                const target = scenes.find((s) => s.id === selected) || scenes[0];
+                if (!target) {
+                  setNotice('No scene to apply media to.');
+                  return;
+                }
+                try {
+                  const result = await applySceneMedia({
+                    sceneId: target.id,
+                    imageUrl: media.imageUrl,
+                    videoUrl: media.videoUrl,
+                    label: media.fileName,
+                    durationHint: media.durationHint,
+                  });
+                  if (result.source) {
+                    setBlocks((prev) => mergeAssetLibrary(prev, [result.source, ...readLocalSources()]));
+                    setBlocksTick((n) => n + 1);
+                  }
+                  setNotice(`Dropped onto ${target.title}.`);
+                } catch (err) {
+                  setNotice(err instanceof Error ? err.message : 'Drop failed');
+                }
+              }}
+            />
           </>
         )}
         <div className="sidebar-bottom">
@@ -637,6 +740,47 @@ export default function Studio() {
               onSelect={selectScene}
               onSeek={seekTimeline}
               onProjectChange={setProject}
+              onNotice={setNotice}
+              onApplyAsset={(asset, sceneId) => {
+                const target =
+                  (sceneId ? scenes.find((s) => s.id === sceneId) : null) ||
+                  scenes.find((s) => s.id === selected) ||
+                  scenes[0];
+                if (!target) {
+                  setNotice('No scene to apply media to.');
+                  return;
+                }
+                setSceneImage(target.id, asset.image);
+                selectScene(target.id);
+                setNotice(`“${asset.description}” → ${target.title}.`);
+              }}
+              onReplaceMedia={async (media) => {
+                const target = scenes.find((s) => s.id === selected) || scenes[0];
+                if (!target) {
+                  setNotice('No scene to apply media to.');
+                  return;
+                }
+                try {
+                  const result = await applySceneMedia({
+                    sceneId: target.id,
+                    imageUrl: media.imageUrl,
+                    videoUrl: media.videoUrl,
+                    label: media.fileName,
+                    durationHint: media.durationHint,
+                  });
+                  if (result.source) {
+                    setBlocks((prev) => mergeAssetLibrary(prev, [result.source, ...readLocalSources()]));
+                    setBlocksTick((n) => n + 1);
+                  }
+                  setNotice(
+                    media.kind === 'video'
+                      ? `Video applied to ${target.title} (poster saved to Assets).`
+                      : `Image applied to ${target.title}.`,
+                  );
+                } catch (err) {
+                  setNotice(err instanceof Error ? err.message : 'Replace failed');
+                }
+              }}
               onTimelineOps={(ops, plan) => {
                 try {
                   proposeTimelineEdits({ plan, ops });
@@ -651,13 +795,50 @@ export default function Studio() {
           {tab === 'Assets' && (
             <section className="dashboard-section">
               <div className="eyebrow">YOUR VISUAL WORLD</div>
-              <h1>Assets.</h1>
+              <div className="asset-header">
+                <h1>Assets.</h1>
+                <button
+                  type="button"
+                  className="asset-upload-btn"
+                  disabled={uploadBusy}
+                  onClick={() => assetFileRef.current?.click()}
+                >
+                  <Upload size={16} />
+                  {uploadBusy ? 'Uploading…' : 'Upload'}
+                </button>
+              </div>
               <p>
-                {falConnected
-                  ? 'Sophie adds a new card for every still. Tap a card to put it on the selected scene — generate never overwrites a slot.'
-                  : 'Seed stills for now. Connect fal.ai so Sophie can grow this library.'}
+                Drop your own stills or video here, or let Sophie generate. Tap a card to put it on the selected scene —
+                generate never overwrites a slot.
+                {!falConnected ? ' Connect fal.ai when you want Sophie to grow the library.' : ''}
               </p>
-              <div className="asset-grid">
+              <input
+                ref={assetFileRef}
+                type="file"
+                accept="image/*,video/*,.png,.jpg,.jpeg,.gif,.webp,.avif,.mp4,.webm,.mov"
+                multiple
+                hidden
+                onChange={(e) => void uploadAssetFiles(e.target.files)}
+              />
+              <div
+                className={`asset-grid${assetDragging ? ' is-drop-target' : ''}${uploadBusy ? ' is-ingest' : ''}`}
+                onDragEnter={onAssetDragEnter}
+                onDragOver={onAssetDragOver}
+                onDragLeave={onAssetDragLeave}
+                onDrop={onAssetDrop}
+              >
+                <button
+                  type="button"
+                  className="asset-upload-tile"
+                  disabled={uploadBusy}
+                  onClick={() => assetFileRef.current?.click()}
+                >
+                  <span className="asset-upload-tile-body">
+                    <Upload size={22} />
+                    <strong>{uploadBusy ? 'Reading media…' : assetDragging ? 'Drop to add' : 'Upload media'}</strong>
+                    <em>Image or video</em>
+                  </span>
+                </button>
                 {(blocks.length
                   ? blocks
                   : scenes.map((s) => ({
@@ -718,8 +899,8 @@ export default function Studio() {
               </p>
               <h3>03 — What’s live vs next</h3>
               <p>
-                Live: website brief → storyboard proposal → human review/apply. Not yet: image/video generation and
-                final export. Storyboard still uses demonstration photos.
+                Live: website brief → storyboard → stills (fal.ai) → Editor Export (WebM montage). Video gen / multi-track
+                mix is next.
               </p>
             </section>
           )}

@@ -23,117 +23,24 @@ const TRACK_DEFS = [
   { id: 'captions', label: 'Captions', color: '#8b5cf6' },
 ];
 
-/** Mirror of components/timeline.ts buildInitialTracks — founder arc by index. */
+/** Empty track shells + captions from scenes — no fake A/V clips. */
 function buildInitialTracks(scenes) {
   let t = 0;
-  const placed = scenes.map((s) => {
+  const caps = scenes.map((s) => {
     const start = t;
     t += s.duration;
-    return { ...s, start, end: t };
+    return {
+      id: `cap-${s.id}`,
+      label: 'CC',
+      start,
+      duration: s.duration,
+      sceneId: s.id,
+    };
   });
-  const total = Math.max(1, t);
-  const at = (i) => placed[i] || placed[placed.length - 1];
-  const caps = placed.map((s) => ({
-    id: `cap-${s.id}`,
-    label: 'CC',
-    start: s.start,
-    duration: s.duration,
-    sceneId: s.id,
-  }));
-
-  const hook = at(0);
-  const problem = at(1);
-  const founder = at(2);
-  const product = at(3);
-  const ask = at(Math.min(4, placed.length - 1));
-
-  const defaults = {
-    founder: [
-      {
-        id: 'clip-founder-acam',
-        label: 'Founder A-cam',
-        start: founder.start,
-        duration: founder.duration + Math.min(2, ask.duration * 0.25),
-        sceneId: founder.id,
-      },
-      {
-        id: 'clip-founder-close',
-        label: 'Founder close',
-        start: ask.start + ask.duration * 0.15,
-        duration: Math.max(3, ask.duration * 0.55),
-        sceneId: ask.id,
-      },
-    ],
-    product: [
-      {
-        id: 'clip-product-ui',
-        label: 'Product UI',
-        start: product.start + 0.4,
-        duration: Math.max(4, product.duration - 0.8),
-        sceneId: product.id,
-      },
-    ],
-    broll: [
-      {
-        id: 'clip-broll-world',
-        label: 'Broken world',
-        start: problem.start,
-        duration: problem.duration,
-        sceneId: problem.id,
-      },
-      {
-        id: 'clip-broll-crowd',
-        label: 'Stage / crowd',
-        start: ask.start,
-        duration: ask.duration,
-        sceneId: ask.id,
-      },
-    ],
-    titles: [
-      {
-        id: 'clip-title-open',
-        label: 'Open title',
-        start: hook.start,
-        duration: Math.min(hook.duration, 4),
-        sceneId: hook.id,
-      },
-      {
-        id: 'clip-title-end',
-        label: 'End card',
-        start: ask.start + Math.max(0, ask.duration - 4),
-        duration: Math.min(4, ask.duration),
-        sceneId: ask.id,
-      },
-    ],
-    vo: [
-      {
-        id: 'clip-vo-arc',
-        label: 'Founder VO',
-        start: Math.min(0.6, total * 0.02),
-        duration: Math.max(total - 1.2, 8),
-      },
-    ],
-    music: [{ id: 'clip-music-1', label: 'Underscore', start: 0, duration: total }],
-    sfx: [
-      {
-        id: 'clip-sfx-turn',
-        label: 'Turn hit',
-        start: Math.max(0, founder.start - 0.15),
-        duration: 1.2,
-      },
-      {
-        id: 'clip-sfx-resolve',
-        label: 'Resolve hit',
-        start: Math.max(0, ask.start - 0.1),
-        duration: 1.4,
-      },
-    ],
-  };
 
   return TRACK_DEFS.map((def) => {
-    if (def.id === 'scenes') return { ...def, clips: [] };
     if (def.id === 'captions') return { ...def, clips: caps };
-    return { ...def, clips: defaults[def.id] || [] };
+    return { ...def, clips: [] };
   });
 }
 

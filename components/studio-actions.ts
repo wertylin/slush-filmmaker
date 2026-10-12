@@ -15,6 +15,7 @@ import {
   buildInitialTracks,
   buildTimelineSnapshot,
   parseTimelineOps,
+  sanitizeTracks,
   syncDerivedTracks,
   type TimelineOp,
   type TimelineTrack,
@@ -33,6 +34,8 @@ export type Scene = {
   image: string;
   duration: number;
   caption: string;
+  /** Optional local/object URL for preview playback when a video was dropped. */
+  video?: string;
 };
 
 export type WebsiteBrief = {
@@ -108,7 +111,7 @@ function clearStoredProjectId() {
 
 function tracksFromMerged(merged: MergedTemplate, scenes: Scene[]): TimelineTrack[] {
   if (Array.isArray(merged.tracks) && merged.tracks.length) {
-    return syncDerivedTracks(merged.tracks as TimelineTrack[], scenes);
+    return sanitizeTracks(merged.tracks as TimelineTrack[], scenes);
   }
   return buildInitialTracks(scenes);
 }
@@ -162,7 +165,7 @@ export function useStudioProject() {
           setTemplate(resolveTemplateId(remote.payload.template));
           setTracks(
             Array.isArray(remote.payload.tracks) && remote.payload.tracks.length
-              ? syncDerivedTracks(remote.payload.tracks as TimelineTrack[], scenesData)
+              ? sanitizeTracks(remote.payload.tracks as TimelineTrack[], scenesData)
               : buildInitialTracks(scenesData),
           );
           setPlayhead(remote.payload.playhead);
@@ -197,7 +200,7 @@ export function useStudioProject() {
               setWebsite(data.website || '');
               setTracks(
                 Array.isArray(data.tracks) && data.tracks.length
-                  ? syncDerivedTracks(data.tracks, data.scenes)
+                  ? sanitizeTracks(data.tracks, data.scenes)
                   : buildInitialTracks(data.scenes),
               );
               if (typeof data.playhead === 'number') setPlayhead(data.playhead);
@@ -262,7 +265,7 @@ export function useStudioProject() {
   useEffect(() => {
     if (!ready) return;
     setTracks((t) => {
-      const next = syncDerivedTracks(t, scenes);
+      const next = sanitizeTracks(t, scenes);
       // Avoid identity churn → autosave PUT storm
       try {
         if (JSON.stringify(t) === JSON.stringify(next)) return t;
@@ -419,10 +422,57 @@ export function useStudioProject() {
   const setSceneImage = useCallback((sceneId: string, imageUrl: string) => {
     const scene = scenesRef.current.find((s) => s.id === sceneId);
     if (!scene) throw new Error('Scene not found');
-    setScenes((all) => all.map((s) => (s.id === sceneId ? { ...s, image: imageUrl } : s)));
+    setScenes((all) =>
+      all.map((s) => (s.id === sceneId ? { ...s, image: imageUrl, video: undefined } : s)),
+    );
     setSelected(sceneId);
     return { status: 'image_applied' as const, sceneId, imageUrl };
   }, []);
+
+  /** Drop / Replace shot: apply still (+ optional video) and append Assets source. */
+  const applySceneMedia = useCallback(
+    async (input: {
+      sceneId: string;
+      imageUrl: string;
+      videoUrl?: string;
+      label?: string;
+      durationHint?: number;
+    }) => {
+      const scene = scenesRef.current.find((s) => s.id === input.sceneId);
+      if (!scene) throw new Error('Scene not found');
+      setScenes((all) =>
+        all.map((s) =>
+          s.id === input.sceneId
+            ? {
+                ...s,
+                image: input.imageUrl,
+                video: input.videoUrl || undefined,
+                duration:
+                  input.durationHint != null
+                    ? Math.max(1, Math.min(60, input.durationHint))
+                    : s.duration,
+              }
+            : s,
+        ),
+      );
+      setSelected(input.sceneId);
+      const source = await addAssetSource({
+        image: input.imageUrl,
+        description: input.label || scene.title || 'Dropped media',
+        caption: scene.caption,
+        duration: input.durationHint ?? scene.duration,
+        prompt: input.label,
+      });
+      return {
+        status: 'media_applied' as const,
+        sceneId: input.sceneId,
+        imageUrl: input.imageUrl,
+        videoUrl: input.videoUrl || null,
+        source,
+      };
+    },
+    [],
+  );
 
   /**
    * Generate path: create a NEW Assets source only.
@@ -448,7 +498,6 @@ export function useStudioProject() {
     },
     [],
   );
-
   const setPendingProposalAction = useCallback((proposal: StoryboardProposal | null) => {
     pendingRef.current = proposal;
     setPendingProposal(proposal);
@@ -557,6 +606,7 @@ export function useStudioProject() {
     pushActivity,
     selectScene,
     setSceneImage,
+    applySceneMedia,
     addGeneratedSource,
     chooseTemplate,
     getState,
