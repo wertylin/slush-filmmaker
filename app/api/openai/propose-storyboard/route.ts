@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getPrompt } from '@/lib/prompts-db';
 
-const TEMPLATE_IDS = ['founder', 'pitch', 'launch', 'update'] as const;
+const TEMPLATE_IDS = ['slush_founder', 'founder', 'pitch', 'launch', 'update'] as const;
 
 type ProposedScene = {
   id: string;

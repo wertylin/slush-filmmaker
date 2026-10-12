@@ -1,4 +1,4 @@
-import { doublePrecision, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, doublePrecision, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 /** Slush Filmmaker projects — isolated from freya_* / frames tables on shared Neon. */
 export const sfProjects = pgTable('sf_projects', {
@@ -41,9 +41,40 @@ export const sfPrompts = pgTable('sf_prompts', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Studio / landing template cards + Fixed skeleton / Customizable slots. */
+export const sfTemplates = pgTable('sf_templates', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  key: text('key').notNull().unique(),
+  name: text('name').notNull(),
+  category: text('category').notNull().default('STORY'),
+  time: text('time').notNull().default('60–90 SEC'),
+  image: text('image').notNull(),
+  headline: text('headline').notNull(),
+  description: text('description').notNull(),
+  locked: boolean('locked').notNull().default(false),
+  sortOrder: integer('sort_order').notNull().default(0),
+  /** Default Editor project name on Use template. */
+  projectTitle: text('project_title'),
+  /** Immutable skeleton: beats, track layout, style. */
+  fixed: jsonb('fixed').$type<{
+    beats: Array<{ id: string; title: string; duration: number }>;
+    tracks: unknown[];
+    style?: { aspect?: string; transition?: string };
+  }>(),
+  /** Founder-fillable defaults: captions + images keyed by scene id. */
+  slots: jsonb('slots').$type<{
+    captions: Record<string, string>;
+    images: Record<string, string>;
+  }>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type SfProject = typeof sfProjects.$inferSelect;
 export type NewSfProject = typeof sfProjects.$inferInsert;
 export type SfBlock = typeof sfBlocks.$inferSelect;
 export type NewSfBlock = typeof sfBlocks.$inferInsert;
 export type SfPrompt = typeof sfPrompts.$inferSelect;
 export type NewSfPrompt = typeof sfPrompts.$inferInsert;
+export type SfTemplate = typeof sfTemplates.$inferSelect;
+export type NewSfTemplate = typeof sfTemplates.$inferInsert;

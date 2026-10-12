@@ -1,7 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isTemplateAvailable, photos, templates } from '@/components/shared';
+import { photos } from '@/components/shared';
+import {
+  fetchTemplateSeed,
+  fetchTemplates,
+  isTemplateAvailable,
+  resolveTemplateId,
+  type MergedTemplate,
+} from '@/lib/templates';
 import { getOpenAIKey, hasFalKey, hasOpenAIKey } from '@/components/keys';
 import {
   applyTimelineOps,
@@ -77,14 +84,6 @@ export type StudioStateSnapshot = {
   timeline?: ReturnType<typeof buildTimelineSnapshot>;
 };
 
-export const INITIAL_SCENES: Scene[] = [
-  { id: 'scene-1', title: 'The spark', image: photos.earth, duration: 6, caption: 'Every great company starts with a question.' },
-  { id: 'scene-2', title: 'The founder', image: photos.founder, duration: 8, caption: 'What if we could build something better?' },
-  { id: 'scene-3', title: 'The people', image: photos.team, duration: 7, caption: 'A shared belief. An extraordinary team.' },
-  { id: 'scene-4', title: 'The vision', image: photos.product, duration: 6, caption: 'Built for a world that’s ready for more.' },
-  { id: 'scene-5', title: 'The next chapter', image: photos.stage, duration: 5, caption: 'And this is only the beginning.' },
-];
-
 const STORAGE = 'slush-studio';
 
 function mergeProposalScenes(current: Scene[], proposed: ProposalScene[]): Scene[] {
@@ -98,14 +97,32 @@ function mergeProposalScenes(current: Scene[], proposed: ProposalScene[]): Scene
   }));
 }
 
+function clearStoredProjectId() {
+  setStoredProjectId('');
+  try {
+    localStorage.removeItem('slush-project-id');
+  } catch {
+    /* ignore */
+  }
+}
+
+function tracksFromMerged(merged: MergedTemplate, scenes: Scene[]): TimelineTrack[] {
+  if (Array.isArray(merged.tracks) && merged.tracks.length) {
+    return syncDerivedTracks(merged.tracks as TimelineTrack[], scenes);
+  }
+  return buildInitialTracks(scenes);
+}
+
 export function useStudioProject() {
-  const [scenes, setScenes] = useState<Scene[]>(INITIAL_SCENES);
-  const [selected, setSelected] = useState('scene-1');
+  const [scenes, setScenes] = useState<Scene[]>([]);
+  const [selected, setSelected] = useState('');
   const [playhead, setPlayhead] = useState(0);
-  const [tracks, setTracks] = useState<TimelineTrack[]>(() => buildInitialTracks(INITIAL_SCENES));
-  const [template, setTemplate] = useState('founder');
+  const [tracks, setTracks] = useState<TimelineTrack[]>([]);
+  const [template, setTemplate] = useState('slush_founder');
   const [website, setWebsite] = useState('');
   const [project, setProject] = useState('Untitled founder film');
+  /** Set when ?template= was applied on boot — studio page opens Editor. */
+  const [bootOpenEditor, setBootOpenEditor] = useState(false);
   const [activity, setActivity] = useState<string[]>(['Studio opened. Your creative space is ready.']);
   const [brief, setBrief] = useState<WebsiteBrief | null>(null);
   const [pendingProposal, setPendingProposal] = useState<StoryboardProposal | null>(null);
@@ -142,7 +159,7 @@ export function useStudioProject() {
           setSelected(scenesData[0].id);
           setProject(remote.payload.title);
           setWebsite(remote.payload.website);
-          setTemplate(isTemplateAvailable(remote.payload.template) ? remote.payload.template : 'founder');
+          setTemplate(resolveTemplateId(remote.payload.template));
           setTracks(
             Array.isArray(remote.payload.tracks) && remote.payload.tracks.length
               ? syncDerivedTracks(remote.payload.tracks as TimelineTrack[], scenesData)
@@ -184,6 +201,7 @@ export function useStudioProject() {
                   : buildInitialTracks(data.scenes),
               );
               if (typeof data.playhead === 'number') setPlayhead(data.playhead);
+              hydrated = true;
             }
             if (data.brief) setBrief(data.brief);
             if (data.pendingProposal) {
@@ -195,13 +213,46 @@ export function useStudioProject() {
           /* ignore */
         }
       }
+      if (!hydrated) {
+        try {
+          const merged = await fetchTemplateSeed('slush_founder');
+          const nextScenes = merged.scenes as Scene[];
+          if (!cancelled && nextScenes.length) {
+            setTemplate(merged.templateId);
+            setProject(merged.project);
+            setScenes(nextScenes);
+            setSelected(nextScenes[0].id);
+            setTracks(tracksFromMerged(merged, nextScenes));
+            hydrated = true;
+          }
+        } catch {
+          /* empty until template chosen */
+        }
+      }
       if (cancelled) return;
       const key = getOpenAIKey();
       setOpenaiKey(key);
       setAgentified(Boolean(key));
+      await fetchTemplates();
       const tid = new URLSearchParams(window.location.search).get('template');
-      if (tid && isTemplateAvailable(tid)) setTemplate(tid);
-      setReady(true);
+      if (tid && isTemplateAvailable(tid)) {
+        const merged = await fetchTemplateSeed(tid);
+        const nextScenes = merged.scenes as Scene[];
+        if (!cancelled) {
+          setTemplate(merged.templateId);
+          setProject(merged.project);
+          if (nextScenes.length) {
+            setScenes(nextScenes);
+            setSelected(nextScenes[0].id);
+            setTracks(tracksFromMerged(merged, nextScenes));
+            setPlayhead(0);
+          }
+          clearStoredProjectId();
+          setBootOpenEditor(true);
+          window.history.replaceState({}, '', '/studio');
+        }
+      }
+      if (!cancelled) setReady(true);
     })();
     return () => {
       cancelled = true;
@@ -258,11 +309,32 @@ export function useStudioProject() {
   );
 
   const chooseTemplate = useCallback(
-    (id?: string) => {
-      const next = id && isTemplateAvailable(id) ? id : 'founder';
-      setTemplate(next);
-      pushActivity(`${templates.find((t) => t.id === next)?.name || 'Founder'} template selected.`);
-      return next;
+    async (id?: string) => {
+      await fetchTemplates();
+      const merged = await fetchTemplateSeed(id);
+      const nextScenes = merged.scenes as Scene[];
+      setTemplate(merged.templateId);
+      setProject(merged.project);
+      if (nextScenes.length) {
+        setScenes(nextScenes);
+        setSelected(nextScenes[0].id);
+        setTracks(tracksFromMerged(merged, nextScenes));
+        setPlayhead(0);
+      }
+      setWebsite('');
+      setBrief(null);
+      pendingRef.current = null;
+      setPendingProposal(null);
+      setReviewOpen(false);
+      clearStoredProjectId();
+      pushActivity(`${merged.project} opened in Editor.`);
+      return {
+        status: 'template_applied' as const,
+        templateId: merged.templateId,
+        project: merged.project,
+        sceneCount: nextScenes.length,
+        openEditor: true as const,
+      };
     },
     [pushActivity],
   );
@@ -399,13 +471,14 @@ export function useStudioProject() {
     setAgentified(Boolean(key.trim()));
   }, []);
 
-  const newProject = useCallback(() => {
-    const next = INITIAL_SCENES.map((s) => ({ ...s }));
+  const newProject = useCallback(async () => {
+    const merged = await fetchTemplateSeed('slush_founder');
+    const next = merged.scenes as Scene[];
     setScenes(next);
-    setSelected('scene-1');
+    setSelected(next[0]?.id || '');
     setPlayhead(0);
-    setTracks(buildInitialTracks(next));
-    setTemplate('founder');
+    setTracks(next.length ? tracksFromMerged(merged, next) : []);
+    setTemplate(merged.templateId);
     setWebsite('');
     setProject('Untitled founder film');
     setBrief(null);
@@ -413,18 +486,12 @@ export function useStudioProject() {
     setPendingProposal(null);
     setReviewOpen(false);
     setActivity(['New project started. Your creative space is ready.']);
-    // Force a fresh Neon row on next autosave
-    setStoredProjectId('');
-    try {
-      localStorage.removeItem('slush-project-id');
-    } catch {
-      /* ignore */
-    }
+    clearStoredProjectId();
     return {
       status: 'new_project' as const,
       project: 'Untitled founder film',
-      template: 'founder',
-      sceneCount: INITIAL_SCENES.length,
+      template: merged.templateId,
+      sceneCount: next.length,
     };
   }, []);
 
@@ -449,6 +516,7 @@ export function useStudioProject() {
     reviewOpen,
     setReviewOpen,
     ready,
+    bootOpenEditor,
     openaiKey,
     agentified,
     syncKey,

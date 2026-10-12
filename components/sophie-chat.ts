@@ -1,7 +1,7 @@
 'use client';
 
 import { callWebMCPTool } from '@/components/webmcp';
-import { isTemplateAvailable, templates } from '@/components/shared';
+import { getCachedTemplates, isTemplateAvailable, resolveTemplateId } from '@/lib/templates';
 import { STUDIO_TABS, type StoryboardProposal, type StudioTab, type WebsiteBrief } from '@/components/studio-actions';
 
 type ApiMessage = {
@@ -73,7 +73,7 @@ async function runTool(name: string, args: Record<string, unknown>, fallback: To
         return result;
       }
       case 'list_templates':
-        return templates.map(({ id, name, description, time, locked }) => ({
+        return getCachedTemplates().map(({ id, name, description, time, locked }) => ({
           id,
           name,
           description,
@@ -82,8 +82,8 @@ async function runTool(name: string, args: Record<string, unknown>, fallback: To
           available: !locked,
         }));
       case 'preview_template': {
-        const templateId = String(args.templateId);
-        if (!isTemplateAvailable(templateId)) return { error: 'Template is locked — only founder story is available.' };
+        const templateId = resolveTemplateId(String(args.templateId));
+        if (!isTemplateAvailable(templateId)) return { error: 'Template is locked — only Slush founder is available.' };
         fallback.preview(templateId);
         return { status: 'preview_opened', templateId };
       }
@@ -100,7 +100,7 @@ async function runTool(name: string, args: Record<string, unknown>, fallback: To
       }
       case 'new_project': {
         if (!fallback.newProject) return { error: 'new_project unavailable' };
-        const result = fallback.newProject();
+        const result = await fallback.newProject();
         fallback.setTab?.('Editor');
         fallback.pushActivity?.('Opened new project in Editor.');
         fallback.setNotice?.('New project ready — you’re in the editor.');
@@ -108,11 +108,11 @@ async function runTool(name: string, args: Record<string, unknown>, fallback: To
       }
       case 'start_film_creation':
       case 'open_studio': {
-        const raw = args.templateId ? String(args.templateId) : 'founder';
+        const raw = args.templateId ? String(args.templateId) : 'slush_founder';
         if (args.templateId && !isTemplateAvailable(raw)) {
-          return { error: 'Template is locked — only founder story is available.' };
+          return { error: 'Template is locked — only Slush founder is available.' };
         }
-        const templateId = isTemplateAvailable(raw) ? raw : 'founder';
+        const templateId = resolveTemplateId(raw);
         fallback.start(templateId);
         return { status: 'studio_opened', templateId };
       }

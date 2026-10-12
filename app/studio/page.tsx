@@ -25,7 +25,8 @@ import {
   ChevronDown,
   Clapperboard,
 } from 'lucide-react';
-import { Logo, photos, templates, TemplateCards, Preview } from '@/components/shared';
+import { Logo, photos, TemplateCards, Preview } from '@/components/shared';
+import { getCachedTemplates } from '@/lib/templates';
 import { useWebMCP, callWebMCPTool } from '@/components/webmcp';
 import { getFalKey, getOpenAIKey, setFalKey, setOpenAIKey, hasFalKey, hasOpenAIKey } from '@/components/keys';
 import { chatWithSophie } from '@/components/sophie-chat';
@@ -81,6 +82,8 @@ export default function Studio() {
     applyProposal,
     dismissProposal,
     newProject,
+    ready,
+    bootOpenEditor,
   } = studio;
 
   const [tab, setTab] = useState<StudioTab>('Overview');
@@ -156,13 +159,23 @@ export default function Studio() {
   }, [setReviewOpen]);
 
   const scene = scenes.find((s) => s.id === selected) || scenes[0];
+  const sceneImage = scene?.image || photos.earth;
+  const sceneTitle = scene?.title || 'No scene yet';
+  const sceneCaption = scene?.caption || '';
+  const sceneDuration = scene?.duration ?? 0;
 
-  function onChooseTemplate(id?: string) {
-    chooseTemplate(id);
+  async function onChooseTemplate(id?: string) {
     setPreview(null);
-    setTab('Overview');
-    setNotice('Template selected. Your storyboard is ready to edit.');
+    const result = await chooseTemplate(id);
+    setTab('Editor');
+    setNotice(`${result.project} ready in Editor.`);
   }
+
+  useEffect(() => {
+    if (!ready || !bootOpenEditor) return;
+    setTab('Editor');
+    setNotice('Template opened in Editor.');
+  }, [ready, bootOpenEditor]);
 
   function seekTimeline(t: number) {
     const total = Math.max(0.001, scenes.reduce((n, s) => n + s.duration, 0));
@@ -469,23 +482,25 @@ export default function Studio() {
                 </div>
                 <div className="editor-title">
                   <div>
-                    <span className="eyebrow">STORYBOARD / {templates.find((t) => t.id === template)?.category}</span>
+                    <span className="eyebrow">STORYBOARD / {getCachedTemplates().find((t) => t.id === template)?.category || 'STORY'}</span>
                     <input aria-label="Project name" value={project} onChange={(e) => setProject(e.target.value)} />
                   </div>
                   <span className="demo-badge">{brief ? 'BRIEF READY' : 'EDITABLE DEMO'}</span>
                 </div>
                 <div className="scene-preview">
-                  <img src={scene.image} alt={scene.title} />
+                  <img src={sceneImage} alt={sceneTitle} />
                   <div className="scene-gradient" />
                   <span className="frame-label">
-                    SCENE {String(scenes.indexOf(scene) + 1).padStart(2, '0')} / {String(scenes.length).padStart(2, '0')}
+                    SCENE{' '}
+                    {String((scene ? scenes.indexOf(scene) : -1) + 1).padStart(2, '0')} /{' '}
+                    {String(scenes.length).padStart(2, '0')}
                   </span>
-                  <div className="scene-caption">{scene.caption}</div>
+                  <div className="scene-caption">{sceneCaption}</div>
                   <div className="preview-controls">
                     <span>
                       <Monitor size={15} /> 16:9 · Storyboard preview
                     </span>
-                    <span>{scene.duration}s</span>
+                    <span>{sceneDuration}s</span>
                   </div>
                 </div>
                 <div className="scene-strip">
@@ -502,10 +517,12 @@ export default function Studio() {
                   <label>
                     SCENE CAPTION
                     <input
-                      value={scene.caption}
-                      onChange={(e) =>
-                        setScenes((all) => all.map((s) => (s.id === scene.id ? { ...s, caption: e.target.value } : s)))
-                      }
+                      value={sceneCaption}
+                      disabled={!scene}
+                      onChange={(e) => {
+                        if (!scene) return;
+                        setScenes((all) => all.map((s) => (s.id === scene.id ? { ...s, caption: e.target.value } : s)));
+                      }}
                     />
                   </label>
                   <label className="duration-edit">
@@ -514,16 +531,18 @@ export default function Studio() {
                       type="number"
                       min="1"
                       max="60"
-                      value={scene.duration}
-                      onChange={(e) =>
+                      value={sceneDuration || ''}
+                      disabled={!scene}
+                      onChange={(e) => {
+                        if (!scene) return;
                         setScenes((all) =>
                           all.map((s) =>
                             s.id === scene.id
                               ? { ...s, duration: Math.max(1, Math.min(60, Number(e.target.value) || 1)) }
                               : s,
                           ),
-                        )
-                      }
+                        );
+                      }}
                     />
                   </label>
                 </div>
@@ -580,7 +599,7 @@ export default function Studio() {
               <div className="eyebrow">YOUR WORK</div>
               <h1>Stories in the making.</h1>
               <button className="project-card" onClick={() => setTab('Editor')}>
-                <img src={scenes[0].image} alt="Project cover" />
+                <img src={scenes[0]?.image || photos.earth} alt="Project cover" />
                 <div>
                   <h3>{project}</h3>
                   <p>
@@ -623,23 +642,32 @@ export default function Studio() {
                   : 'Demo imagery for now. Connect fal.ai to generate stills with Sophie.'}
               </p>
               <div className="asset-grid">
-                {(blocks.length ? blocks : scenes.map((s) => ({ id: s.id, image: s.image, description: s.title }))).map(
-                  (b) => (
-                    <button
-                      key={b.id}
-                      onClick={() => {
-                        const match = scenes.find((s) => s.title === b.description);
-                        if (match) selectScene(match.id);
-                        setTab('Editor');
-                      }}
-                    >
-                      <img src={b.image} alt={b.description} />
-                      <span>
-                        {b.description} <ArrowUpRight size={16} />
-                      </span>
-                    </button>
-                  ),
-                )}
+                {(blocks.length
+                  ? blocks
+                  : scenes.map((s) => ({
+                      id: s.id,
+                      key: s.id,
+                      image: s.image,
+                      description: s.title,
+                      caption: s.caption,
+                      duration: s.duration,
+                      sortOrder: 0,
+                    }))
+                ).map((b) => (
+                  <button
+                    key={b.id}
+                    onClick={() => {
+                      const match = scenes.find((s) => s.title === b.description || s.id === b.key);
+                      if (match) selectScene(match.id);
+                      setTab('Editor');
+                    }}
+                  >
+                    <img src={b.image} alt={b.description} />
+                    <span>
+                      {b.description} <ArrowUpRight size={16} />
+                    </span>
+                  </button>
+                ))}
               </div>
             </section>
           )}

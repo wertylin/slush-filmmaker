@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useRef } from 'react';
-import { isTemplateAvailable, templates } from './shared';
 import { hasOpenAIKey, requireFalKey, requireOpenAIKey } from './keys';
 import { STUDIO_TABS, type Scene, type StoryboardProposal, type StudioTab, type WebsiteBrief } from './studio-actions';
+import { fetchTemplates, getCachedTemplates, isTemplateAvailable, resolveTemplateId } from '@/lib/templates';
 
 type Tool = {
   name: string;
@@ -41,7 +41,7 @@ export type WebMCPActions = {
   setNotice?: (text: string) => void;
   openSettings?: () => void;
   setTab?: (tab: StudioTab) => void;
-  newProject?: () => unknown;
+  newProject?: () => unknown | Promise<unknown>;
   setSceneImage?: (sceneId: string, imageUrl: string) => unknown;
 };
 
@@ -120,18 +120,25 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
     const controller = new AbortController();
     const registered = new Map<string, Tool>();
     const agentified = hasOpenAIKey();
+    void fetchTemplates();
+
+    const templateIds = () => {
+      const ids = getCachedTemplates().map((t) => t.id);
+      return ids.includes('slush_founder') ? ids : [...ids, 'slush_founder'];
+    };
 
     const schema = {
       type: 'object',
-      properties: { templateId: { type: 'string', enum: templates.map((t) => t.id) } },
+      properties: { templateId: { type: 'string', enum: templateIds() } },
       required: ['templateId'],
       additionalProperties: false,
     };
 
     function valid(input: Record<string, unknown>) {
-      const id = String(input.templateId);
-      if (!templates.some((t) => t.id === id)) throw new Error('Unknown template');
-      if (!isTemplateAvailable(id)) throw new Error('Template is locked — only founder story is available right now.');
+      const id = resolveTemplateId(String(input.templateId));
+      const known = getCachedTemplates().some((t) => t.id === id) || id === 'slush_founder' || id === 'founder';
+      if (!known) throw new Error('Unknown template');
+      if (!isTemplateAvailable(id)) throw new Error('Template is locked — only Slush founder is available right now.');
       return id;
     }
 
@@ -141,15 +148,17 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
         description: 'List available founder film template concepts. Effect: read.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         annotations: { readOnlyHint: true },
-        execute: () =>
-          templates.map(({ id, name, description, time, locked }) => ({
+        execute: async () => {
+          const rows = await fetchTemplates();
+          return rows.map(({ id, name, description, time, locked }) => ({
             id,
             name,
             description,
             time,
             locked,
             available: !locked,
-          })),
+          }));
+        },
       },
       {
         name: 'preview_template',
@@ -168,12 +177,12 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
         inputSchema: {
           type: 'object',
           properties: {
-            templateId: { type: 'string', enum: templates.map((t) => t.id) },
+            templateId: { type: 'string', enum: templateIds() },
           },
           additionalProperties: false,
         },
         execute: (input) => {
-          const id = input.templateId ? valid(input) : 'founder';
+          const id = input.templateId ? valid(input) : 'slush_founder';
           ref.current.start(id);
           return { status: 'studio_opened', templateId: id };
         },
@@ -289,8 +298,8 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
         description:
           'Call whenever the founder asks to start / begin / create a new project or fresh film. Creates a fresh untitled founder film (resets scenes/website/brief/pending proposal) and navigates the visible UI to the project detail (Editor). Effect: write + navigation.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-        execute: () => {
-          const result = ref.current.newProject?.();
+        execute: async () => {
+          const result = await ref.current.newProject?.();
           ref.current.setTab?.('Editor');
           ref.current.pushActivity?.('Opened new project in Editor.');
           ref.current.setNotice?.('New project ready — you’re in the editor.');
@@ -391,7 +400,7 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
             type: 'object',
             properties: {
               brief: {},
-              templateId: { type: 'string', enum: templates.map((t) => t.id) },
+              templateId: { type: 'string', enum: templateIds() },
               sceneCount: { type: 'integer', minimum: 3, maximum: 8 },
             },
             required: ['brief', 'templateId'],

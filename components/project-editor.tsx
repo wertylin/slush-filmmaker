@@ -250,8 +250,11 @@ export function ProjectEditor({
 
   const total = Math.max(1, scenes.reduce((n, s) => n + s.duration, 0));
   const scene = scenes.find((s) => s.id === selected) || scenes[0];
-  const sceneIndex = Math.max(0, scenes.findIndex((s) => s.id === scene.id));
+  const sceneIndex = scene ? Math.max(0, scenes.findIndex((s) => s.id === scene.id)) : 0;
   const playheadRatio = Math.min(1, Math.max(0, playhead / total));
+  const frameImage = scene?.image || '';
+  const frameTitle = scene?.title || 'No scene';
+  const frameCaption = scene?.caption || 'Pick a template to load scenes.';
 
   const sceneBlocks = useMemo(() => {
     let t = 0;
@@ -305,13 +308,13 @@ export function ProjectEditor({
       <div className="nle-stage">
         <div className="nle-player">
           <div className="nle-frame">
-            <img src={scene.image} alt={scene.title} />
+            {frameImage ? <img src={frameImage} alt={frameTitle} /> : <div className="nle-frame-empty" />}
             <div className="nle-frame-shade" />
             <div className="nle-overlay-copy">
-              {scene.caption.split('.').filter(Boolean)[0] || scene.title}.
+              {frameCaption.split('.').filter(Boolean)[0] || frameTitle}.
             </div>
             <span className="nle-scene-chip">
-              SCENE {String(sceneIndex + 1).padStart(2, '0')} · {scene.title.toUpperCase()}
+              SCENE {String(sceneIndex + 1).padStart(2, '0')} · {frameTitle.toUpperCase()}
             </span>
           </div>
           <div className="nle-progress">
@@ -369,7 +372,11 @@ export function ProjectEditor({
               type="button"
               onClick={() =>
                 onTimelineOps?.(
-                  [{ op: 'add_scene', afterSceneId: scene.id, title: 'New beat', caption: '', duration: 5 }],
+                  [
+                    scene
+                      ? { op: 'add_scene', afterSceneId: scene.id, title: 'New beat', caption: '', duration: 5 }
+                      : { op: 'add_scene', title: 'New beat', caption: '', duration: 5 },
+                  ],
                   'Add scene after selection',
                 )
               }
@@ -378,18 +385,24 @@ export function ProjectEditor({
             </button>
             <button
               type="button"
-              onClick={() =>
+              disabled={!scene}
+              onClick={() => {
+                if (!scene) return;
                 onTimelineOps?.(
                   [{ op: 'split_scene', sceneId: scene.id, at: Math.max(1, scene.duration / 2) }],
                   'Split selected scene',
-                )
-              }
+                );
+              }}
             >
               <Scissors size={14} /> Split
             </button>
             <button
               type="button"
-              onClick={() => onTimelineOps?.([{ op: 'delete_scene', sceneId: scene.id }], 'Delete selected scene')}
+              disabled={!scene}
+              onClick={() => {
+                if (!scene) return;
+                onTimelineOps?.([{ op: 'delete_scene', sceneId: scene.id }], 'Delete selected scene');
+              }}
             >
               <Trash2 size={14} /> Delete
             </button>

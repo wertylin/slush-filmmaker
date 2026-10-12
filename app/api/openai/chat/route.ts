@@ -12,7 +12,7 @@ type ChatMessage = {
   }>;
 };
 
-const TEMPLATE_ENUM = ['founder', 'pitch', 'launch', 'update'] as const;
+const TEMPLATE_ENUM = ['slush_founder', 'founder', 'pitch', 'launch', 'update'] as const;
 const STUDIO_TAB_ENUM = ['Overview', 'Templates', 'Projects', 'Editor', 'Assets', 'Docs'] as const;
 
 const TOOLS = [
