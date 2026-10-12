@@ -17,6 +17,36 @@ export const sfProjects = pgTable('sf_projects', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** fal.ai model catalog — Sophie routes generate_scene_image via these rows. */
+export const sfFalModels = pgTable('sf_fal_models', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  /** Stable slug e.g. flux-schnell — passed as modelKey from tools. */
+  key: text('key').notNull().unique(),
+  /** fal.run path e.g. fal-ai/flux/schnell */
+  endpoint: text('endpoint').notNull(),
+  label: text('label').notNull(),
+  kind: text('kind').notNull().default('t2i'),
+  enabled: boolean('enabled').notNull().default(true),
+  isDefault: boolean('is_default').notNull().default(false),
+  costTier: text('cost_tier').notNull().default('cheap'),
+  bestFor: text('best_for').notNull(),
+  avoidFor: text('avoid_for').notNull().default(''),
+  /** How /api/fal/generate-image builds the request body. */
+  requestProfile: text('request_profile').notNull().default('flux'),
+  capabilities: jsonb('capabilities')
+    .$type<{
+      refs?: boolean;
+      maxRefs?: number;
+      aspect?: boolean;
+      edit?: boolean;
+    }>()
+    .notNull()
+    .default({}),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Assets library — seed stills + generated sources (append-only on generate). */
 export const sfBlocks = pgTable('sf_blocks', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -27,6 +57,16 @@ export const sfBlocks = pgTable('sf_blocks', {
   caption: text('caption').notNull().default(''),
   duration: doublePrecision('duration').notNull().default(6),
   sortOrder: integer('sort_order').notNull().default(0),
+  /** seed | fal | upload | url */
+  source: text('source').notNull().default('seed'),
+  /** sf_fal_models.key when source=fal */
+  modelKey: text('model_key'),
+  prompt: text('prompt'),
+  aspect: text('aspect'),
+  refUrls: text('ref_urls').array().notNull().default([]),
+  falRequestId: text('fal_request_id'),
+  clientKey: text('client_key'),
+  meta: jsonb('meta').$type<Record<string, unknown>>().notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -72,6 +112,8 @@ export const sfTemplates = pgTable('sf_templates', {
 
 export type SfProject = typeof sfProjects.$inferSelect;
 export type NewSfProject = typeof sfProjects.$inferInsert;
+export type SfFalModel = typeof sfFalModels.$inferSelect;
+export type NewSfFalModel = typeof sfFalModels.$inferInsert;
 export type SfBlock = typeof sfBlocks.$inferSelect;
 export type NewSfBlock = typeof sfBlocks.$inferInsert;
 export type SfPrompt = typeof sfPrompts.$inferSelect;

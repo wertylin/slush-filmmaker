@@ -50,6 +50,10 @@ export type WebMCPActions = {
     prompt?: string;
     caption?: string;
     duration?: number;
+    modelKey?: string;
+    aspect?: string;
+    refUrls?: string[];
+    falRequestId?: string | null;
   }) => unknown | Promise<unknown>;
 };
 
@@ -109,15 +113,55 @@ async function proposeStoryboardRemote(input: {
   return data.proposal;
 }
 
-async function generateSceneImageRemote(input: { key: string; prompt: string; sceneTitle?: string }) {
+async function listFalModelsRemote() {
+  const res = await fetch('/api/fal/models');
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    models?: Array<{
+      key: string;
+      label: string;
+      costTier: string;
+      bestFor: string;
+      avoidFor: string;
+      isDefault: boolean;
+      capabilities?: Record<string, unknown>;
+    }>;
+  };
+  if (!res.ok || !Array.isArray(data.models)) throw new Error(data.error || 'Failed to list fal models');
+  return data.models;
+}
+
+async function generateSceneImageRemote(input: {
+  key: string;
+  prompt: string;
+  sceneTitle?: string;
+  modelKey?: string;
+  aspect?: string;
+  refUrls?: string[];
+}) {
   const res = await fetch('/api/fal/generate-image', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
-  const data = (await res.json().catch(() => ({}))) as { error?: string; imageUrl?: string; model?: string };
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    imageUrl?: string;
+    model?: string;
+    modelKey?: string;
+    label?: string;
+    aspect?: string;
+    falRequestId?: string | null;
+  };
   if (!res.ok || !data.imageUrl) throw new Error(data.error || 'Image generation failed');
-  return { imageUrl: data.imageUrl, model: data.model };
+  return {
+    imageUrl: data.imageUrl,
+    model: data.model,
+    modelKey: data.modelKey,
+    label: data.label,
+    aspect: data.aspect,
+    falRequestId: data.falRequestId ?? null,
+  };
 }
 
 export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true) {
@@ -317,16 +361,40 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
       });
     }
 
+    if (ref.current.getState) {
+      tools.push({
+        name: 'list_fal_models',
+        description:
+          'Read enabled fal.ai image models from the catalog (key, cost tier, bestFor/avoidFor). Call before generate_scene_image when choosing a model. Effect: read.',
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        annotations: { readOnlyHint: true },
+        execute: async () => {
+          const models = await listFalModelsRemote();
+          return { models, count: models.length };
+        },
+      });
+    }
+
     if (ref.current.getState && ref.current.addGeneratedSource) {
       tools.push({
         name: 'generate_scene_image',
         description:
-          'Paid/fal.ai: generate a cinematic still and add it as a NEW Assets source card (does not overwrite or auto-apply to timeline scenes). Requires fal.ai BYOK. Optional sceneId/prompt for context. Effect: write + paid.',
+          'Paid/fal.ai: generate a cinematic still and add it as a NEW Assets source card (does not overwrite or auto-apply to timeline scenes). Requires fal.ai BYOK. Pick modelKey from list_fal_models (default flux-schnell). Routing: draft→flux-schnell/seedream-5-lite; hero→flux-2-pro; same character+refs→nano-banana-2. Effect: write + paid.',
         inputSchema: {
           type: 'object',
           properties: {
             sceneId: { type: 'string' },
             prompt: { type: 'string' },
+            modelKey: {
+              type: 'string',
+              description: 'Catalog key e.g. flux-schnell | seedream-5-lite | flux-2-pro | nano-banana-2',
+            },
+            aspect: { type: 'string', description: 'e.g. 16:9 | 1:1 | 9:16' },
+            refUrls: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Reference image URLs (nano-banana-2)',
+            },
           },
           additionalProperties: false,
         },
@@ -354,11 +422,17 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
           const prompt =
             String(input.prompt || '').trim() ||
             (scene ? `${scene.title}. ${scene.caption}`.trim() : 'Cinematic founder film still');
+          const modelKey = input.modelKey ? String(input.modelKey).trim() : undefined;
+          const aspect = input.aspect ? String(input.aspect).trim() : '16:9';
+          const refUrls = Array.isArray(input.refUrls) ? input.refUrls.map(String).filter(Boolean) : [];
 
           const generated = await generateSceneImageRemote({
             key,
             prompt,
             sceneTitle: scene?.title || 'still',
+            modelKey,
+            aspect,
+            refUrls,
           });
 
           const saved = (await ref.current.addGeneratedSource({
@@ -367,10 +441,16 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
             prompt,
             caption: scene?.caption,
             duration: scene?.duration,
+            modelKey: generated.modelKey,
+            aspect: generated.aspect || aspect,
+            refUrls,
+            falRequestId: generated.falRequestId,
           })) as { source?: { id?: string; key?: string; description?: string; image?: string }; imageUrl?: string };
 
           ref.current.setTab?.('Assets');
-          ref.current.pushActivity?.(`New Assets source: ${saved?.source?.description || prompt.slice(0, 40)}`);
+          ref.current.pushActivity?.(
+            `New Assets source (${generated.label || generated.modelKey || 'fal'}): ${saved?.source?.description || prompt.slice(0, 40)}`,
+          );
           ref.current.setNotice?.('New source added — open Assets to see it.');
           return {
             effect: 'source_added',
@@ -379,6 +459,9 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
             prompt,
             imageUrl: generated.imageUrl,
             model: generated.model,
+            modelKey: generated.modelKey,
+            label: generated.label,
+            aspect: generated.aspect || aspect,
             sourceId: saved?.source?.id || null,
             sourceKey: saved?.source?.key || null,
             library: 'source_added',

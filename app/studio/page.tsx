@@ -557,7 +557,7 @@ export default function Studio() {
           {tab === 'Overview' && (
             <>
               <section className="studio-hero">
-                <img className="studio-hero-bg" src={photos.stage} alt="" />
+                <img className="studio-hero-bg" src="/images/slush-background.png" alt="" />
                 <div className="eyebrow">
                   <span className="status-dot" /> YOUR VISION. YOUR DIRECTOR’S CHAIR.
                 </div>

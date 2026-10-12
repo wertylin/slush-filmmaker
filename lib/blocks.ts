@@ -6,6 +6,12 @@ export type Block = {
   caption: string;
   duration: number;
   sortOrder: number;
+  source?: string;
+  modelKey?: string | null;
+  prompt?: string | null;
+  aspect?: string | null;
+  refUrls?: string[];
+  falRequestId?: string | null;
 };
 
 const LOCAL_SOURCES_KEY = 'slush-asset-sources';
@@ -85,6 +91,11 @@ export function createLocalSource(input: {
   caption?: string;
   duration?: number;
   prompt?: string;
+  source?: string;
+  modelKey?: string;
+  aspect?: string;
+  refUrls?: string[];
+  falRequestId?: string;
 }): Block {
   const key = makeSourceKey();
   const label =
@@ -98,6 +109,12 @@ export function createLocalSource(input: {
     caption: input.caption || input.prompt || '',
     duration: Math.max(1, Math.min(60, Number(input.duration) || 6)),
     sortOrder: Date.now(),
+    source: input.source || 'fal',
+    modelKey: input.modelKey || null,
+    prompt: input.prompt || null,
+    aspect: input.aspect || null,
+    refUrls: input.refUrls || [],
+    falRequestId: input.falRequestId || null,
   };
 }
 
@@ -112,6 +129,11 @@ export async function addAssetSource(input: {
   caption?: string;
   duration?: number;
   prompt?: string;
+  source?: string;
+  modelKey?: string;
+  aspect?: string;
+  refUrls?: string[];
+  falRequestId?: string;
 }): Promise<Block> {
   const local = createLocalSource(input);
   const existing = readLocalSources().filter((b) => b.key !== local.key && b.image !== local.image);
@@ -128,6 +150,12 @@ export async function addAssetSource(input: {
         caption: local.caption,
         duration: local.duration,
         sortOrder: local.sortOrder,
+        source: local.source || 'fal',
+        modelKey: local.modelKey,
+        prompt: local.prompt,
+        aspect: local.aspect,
+        refUrls: local.refUrls,
+        falRequestId: local.falRequestId,
       }),
     });
     if (res.ok) {

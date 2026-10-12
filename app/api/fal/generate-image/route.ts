@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server';
+import { buildFalInput, extractFalImageUrl, resolveFalModel } from '@/lib/fal-models';
 
-const FAL_MODEL = 'fal-ai/flux/schnell';
+export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
-  let body: { key?: string; prompt?: string; sceneTitle?: string };
+  let body: {
+    key?: string;
+    prompt?: string;
+    sceneTitle?: string;
+    modelKey?: string;
+    aspect?: string;
+    refUrls?: string[];
+  };
 
   try {
     body = await request.json();
@@ -22,33 +30,39 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
   }
 
+  let model;
+  try {
+    model = await resolveFalModel(body.modelKey);
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Unknown model' }, { status: 400 });
+  }
+
   const sceneTitle = String(body.sceneTitle || '').trim();
   const fullPrompt = [
-    'Cinematic founder-film still, 16:9, photoreal, premium lighting, no text, no watermark, no logo.',
+    'Cinematic founder-film still, photoreal, premium lighting, no text, no watermark, no logo.',
     sceneTitle ? `Scene: ${sceneTitle}.` : '',
     prompt,
   ]
     .filter(Boolean)
     .join(' ');
 
-  const res = await fetch(`https://fal.run/${FAL_MODEL}`, {
+  const aspect = String(body.aspect || '16:9').trim() || '16:9';
+  const refUrls = Array.isArray(body.refUrls) ? body.refUrls.map(String).filter(Boolean) : [];
+  const falInput = buildFalInput(model, { prompt: fullPrompt, aspect, refUrls });
+
+  const res = await fetch(`https://fal.run/${model.endpoint}`, {
     method: 'POST',
     headers: {
       Authorization: `Key ${key}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      prompt: fullPrompt.slice(0, 1500),
-      image_size: 'landscape_16_9',
-      num_images: 1,
-      enable_safety_checker: true,
-    }),
+    body: JSON.stringify(falInput),
   });
 
-  const data = (await res.json().catch(() => ({}))) as {
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown> & {
     detail?: string | Array<{ msg?: string }>;
     error?: string;
-    images?: Array<{ url?: string }>;
+    request_id?: string;
   };
 
   if (!res.ok) {
@@ -61,14 +75,24 @@ export async function POST(request: Request) {
     const message =
       res.status === 401 || res.status === 403
         ? 'Invalid fal.ai API key'
-        : detail || 'fal.ai image generation failed';
-    return NextResponse.json({ error: message }, { status: res.status === 401 || res.status === 403 ? 401 : 502 });
+        : String(detail || 'fal.ai image generation failed');
+    return NextResponse.json(
+      { error: message, modelKey: model.key, endpoint: model.endpoint },
+      { status: res.status === 401 || res.status === 403 ? 401 : 502 },
+    );
   }
 
-  const imageUrl = data.images?.[0]?.url;
+  const imageUrl = extractFalImageUrl(data);
   if (!imageUrl) {
-    return NextResponse.json({ error: 'fal.ai returned no image' }, { status: 502 });
+    return NextResponse.json({ error: 'fal.ai returned no image', modelKey: model.key }, { status: 502 });
   }
 
-  return NextResponse.json({ imageUrl, model: FAL_MODEL });
+  return NextResponse.json({
+    imageUrl,
+    model: model.endpoint,
+    modelKey: model.key,
+    label: model.label,
+    aspect,
+    falRequestId: typeof data.request_id === 'string' ? data.request_id : null,
+  });
 }

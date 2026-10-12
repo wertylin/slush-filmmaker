@@ -479,13 +479,28 @@ export function useStudioProject() {
    * Does not mutate timeline scenes — founder taps the card to apply.
    */
   const addGeneratedSource = useCallback(
-    async (input: { imageUrl: string; label?: string; prompt?: string; caption?: string; duration?: number }) => {
+    async (input: {
+      imageUrl: string;
+      label?: string;
+      prompt?: string;
+      caption?: string;
+      duration?: number;
+      modelKey?: string;
+      aspect?: string;
+      refUrls?: string[];
+      falRequestId?: string | null;
+    }) => {
       const source = await addAssetSource({
         image: input.imageUrl,
         description: input.label || 'Generated still',
         caption: input.caption || input.prompt || '',
         duration: input.duration,
         prompt: input.prompt,
+        source: 'fal',
+        modelKey: input.modelKey,
+        aspect: input.aspect,
+        refUrls: input.refUrls,
+        falRequestId: input.falRequestId || undefined,
       });
       return {
         status: 'source_added' as const,
@@ -493,6 +508,7 @@ export function useStudioProject() {
         key: source.key,
         description: source.description,
         imageUrl: source.image,
+        modelKey: source.modelKey,
         source,
       };
     },

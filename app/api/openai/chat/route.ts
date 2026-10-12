@@ -186,14 +186,26 @@ const TOOLS = [
   {
     type: 'function' as const,
     function: {
+      name: 'list_fal_models',
+      description:
+        'Read enabled fal.ai image models (key, costTier, bestFor, avoidFor). Call before generate_scene_image when choosing a model.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
       name: 'generate_scene_image',
       description:
-        'Paid/fal.ai: generate a cinematic still and add it as a NEW Assets source card (does not overwrite or auto-apply to timeline scenes). Requires fal.ai key (falConnected). Optional sceneId/prompt for context only.',
+        'Paid/fal.ai: generate a cinematic still as a NEW Assets source card (no auto-apply). Requires falConnected. Pick modelKey from list_fal_models. Routing: draft→flux-schnell/seedream-5-lite; hero→flux-2-pro; same character+refs→nano-banana-2.',
       parameters: {
         type: 'object',
         properties: {
           sceneId: { type: 'string' },
           prompt: { type: 'string' },
+          modelKey: { type: 'string' },
+          aspect: { type: 'string' },
+          refUrls: { type: 'array', items: { type: 'string' } },
         },
         additionalProperties: false,
       },
