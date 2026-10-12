@@ -31,6 +31,8 @@ export type StudioSnapshot = {
 
 type ToolActions = {
   getState: () => unknown;
+  getTimeline?: () => unknown;
+  proposeTimelineEdits?: (input: { plan?: string; ops: unknown }) => unknown;
   preview: (id: string) => void;
   selectScene: (id: string) => void;
   start: (id?: string) => void;
@@ -57,6 +59,19 @@ async function runTool(name: string, args: Record<string, unknown>, fallback: To
     switch (name) {
       case 'get_studio_state':
         return fallback.getState();
+      case 'get_timeline':
+        if (!fallback.getTimeline) return { error: 'get_timeline unavailable' };
+        return fallback.getTimeline();
+      case 'propose_timeline_edits': {
+        if (!fallback.proposeTimelineEdits) return { error: 'propose_timeline_edits unavailable' };
+        const result = fallback.proposeTimelineEdits({
+          plan: args.plan != null ? String(args.plan) : undefined,
+          ops: args.ops,
+        }) as { openEditor?: boolean };
+        if (result?.openEditor) fallback.setTab?.('Editor');
+        fallback.setNotice?.('Timeline updated.');
+        return result;
+      }
       case 'list_templates':
         return templates.map(({ id, name, description, time, locked }) => ({
           id,
@@ -86,9 +101,10 @@ async function runTool(name: string, args: Record<string, unknown>, fallback: To
       case 'new_project': {
         if (!fallback.newProject) return { error: 'new_project unavailable' };
         const result = fallback.newProject();
-        fallback.setTab?.('Overview');
-        fallback.setNotice?.('New project started.');
-        return result;
+        fallback.setTab?.('Editor');
+        fallback.pushActivity?.('Opened new project in Editor.');
+        fallback.setNotice?.('New project ready — you’re in the editor.');
+        return { ...(typeof result === 'object' && result ? result : {}), tab: 'Editor' as const };
       }
       case 'start_film_creation':
       case 'open_studio': {

@@ -29,6 +29,8 @@ export type WebMCPActions = {
   preview: (id: string) => void;
   start: (id?: string) => void;
   getState?: () => unknown;
+  getTimeline?: () => unknown;
+  proposeTimelineEdits?: (input: { plan?: string; ops: unknown }) => unknown;
   selectScene?: (id: string) => void;
   setWebsite?: (url: string) => void;
   setBrief?: (brief: WebsiteBrief | null) => void;
@@ -192,17 +194,60 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
       tools.push({
         name: 'get_studio_state',
         description:
-          'Read the current local demo project, template, scenes, selection, website, BYOK/agentified flag, pending proposal, activity, and current studio tab. Effect: read.',
+          'Read the current local demo project, template, scenes, selection, website, BYOK/agentified flag, pending proposal, activity, current studio tab, and timeline digest. Effect: read.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         annotations: { readOnlyHint: true },
         execute: () => ref.current.getState?.(),
       });
     }
 
+    if (ref.current.getTimeline) {
+      tools.push({
+        name: 'get_timeline',
+        description:
+          'Read the Editor NLE timeline: totalDuration, playhead, selectedSceneId, scenes with absolute start/end, and all tracks/clips. Call before/after timeline edits. Times are CURRENT TIMELINE seconds. Effect: read.',
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        annotations: { readOnlyHint: true },
+        execute: () => ref.current.getTimeline?.(),
+      });
+    }
+
+    if (ref.current.proposeTimelineEdits) {
+      tools.push({
+        name: 'propose_timeline_edits',
+        description:
+          "Main timeline editor (Panoptik-style batch). Applies one atomic ops[] batch to the live Editor timeline and opens Editor. Ops (CURRENT TIMELINE seconds): {op:'update_scene',sceneId,title?,caption?,duration?}; {op:'reorder_scenes',sceneIds}; {op:'add_scene',title,caption?,duration?,afterSceneId?}; {op:'delete_scene',sceneId}; {op:'split_scene',sceneId,at}; {op:'select_scene',sceneId}; {op:'seek',t}; {op:'upsert_clip',trackId,clip:{id?,label,start,duration,sceneId?}}; {op:'update_clip',trackId,clipId,label?,start?,duration?}; {op:'delete_clip',trackId,clipId}; {op:'open_editor'}. trackId enum: founder|product|broll|titles|vo|music|sfx|captions (not scenes — use scene ops). Re-read get_timeline after. Effect: write.",
+        inputSchema: {
+          type: 'object',
+          properties: {
+            plan: { type: 'string' },
+            ops: { type: 'array', items: { type: 'object', additionalProperties: true }, minItems: 1 },
+          },
+          required: ['ops'],
+          additionalProperties: false,
+        },
+        execute: (input) => {
+          if (!ref.current.proposeTimelineEdits) throw new Error('propose_timeline_edits unavailable');
+          const result = ref.current.proposeTimelineEdits({
+            plan: input.plan != null ? String(input.plan) : undefined,
+            ops: input.ops,
+          }) as { openEditor?: boolean; results?: unknown; timeline?: unknown; status?: string };
+          if (result?.openEditor) ref.current.setTab?.('Editor');
+          const fails = Array.isArray(result?.results)
+            ? (result.results as Array<{ ok?: boolean }>).filter((r) => !r.ok).length
+            : 0;
+          ref.current.setNotice?.(
+            fails ? `Timeline: ${fails} op(s) failed — check tool result.` : 'Timeline updated.',
+          );
+          return result;
+        },
+      });
+    }
+
     if (ref.current.selectScene) {
       tools.push({
         name: 'select_scene',
-        description: 'Select an existing storyboard scene in the visible editor. Effect: write (UI selection).',
+        description: 'Select an existing storyboard scene in the visible editor (opens Editor). Effect: write (UI selection).',
         inputSchema: {
           type: 'object',
           properties: { sceneId: { type: 'string' } },
@@ -211,6 +256,7 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
         },
         execute: (input) => {
           ref.current.selectScene?.(String(input.sceneId));
+          ref.current.setTab?.('Editor');
           return { selectedSceneId: input.sceneId };
         },
       });
@@ -241,13 +287,14 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
       tools.push({
         name: 'new_project',
         description:
-          'Start a fresh untitled founder film (resets scenes/website/brief/pending proposal to defaults) and open Overview. Effect: write.',
+          'Call whenever the founder asks to start / begin / create a new project or fresh film. Creates a fresh untitled founder film (resets scenes/website/brief/pending proposal) and navigates the visible UI to the project detail (Editor). Effect: write + navigation.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         execute: () => {
           const result = ref.current.newProject?.();
-          ref.current.setTab?.('Overview');
-          ref.current.setNotice?.('New project started.');
-          return result;
+          ref.current.setTab?.('Editor');
+          ref.current.pushActivity?.('Opened new project in Editor.');
+          ref.current.setNotice?.('New project ready — you’re in the editor.');
+          return { ...(typeof result === 'object' && result ? result : {}), tab: 'Editor' as const };
         },
       });
     }

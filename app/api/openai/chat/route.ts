@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { SOPHIE_SYSTEM_PROMPT } from '@/prompts/sophie';
+import { getPrompt } from '@/lib/prompts-db';
 
 type ChatMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -50,11 +50,41 @@ const TOOLS = [
     type: 'function' as const,
     function: {
       name: 'select_scene',
-      description: 'Select a storyboard scene in the visible editor.',
+      description: 'Select a storyboard scene in the visible editor (opens Editor).',
       parameters: {
         type: 'object',
         properties: { sceneId: { type: 'string' } },
         required: ['sceneId'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_timeline',
+      description:
+        'Read Editor NLE timeline: totalDuration, playhead, scenes with absolute start/end, and track clips. Call before and after timeline edits. Times are CURRENT TIMELINE seconds.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'propose_timeline_edits',
+      description:
+        "Apply a batch of timeline ops to the live Editor (Panoptik-style). Ops: update_scene, reorder_scenes, add_scene, delete_scene, split_scene, select_scene, seek, upsert_clip, update_clip, delete_clip, open_editor. trackId: founder|product|broll|titles|vo|music|sfx|captions. Re-read get_timeline after.",
+      parameters: {
+        type: 'object',
+        properties: {
+          plan: { type: 'string' },
+          ops: {
+            type: 'array',
+            minItems: 1,
+            items: { type: 'object', additionalProperties: true },
+          },
+        },
+        required: ['ops'],
         additionalProperties: false,
       },
     },
@@ -78,7 +108,7 @@ const TOOLS = [
     function: {
       name: 'new_project',
       description:
-        'Start a fresh untitled founder film (resets scenes/website/brief/pending proposal) and open Overview.',
+        'Call whenever the founder asks to start / begin / create a new project or fresh film. Creates a fresh untitled founder film and navigates the visible UI to the project detail (Editor) so the founder lands inside it.',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
     },
   },
@@ -190,9 +220,10 @@ export async function POST(request: Request) {
   }
 
   const history = Array.isArray(body.messages) ? body.messages : [];
+  const sophieSystem = await getPrompt('sophie_system');
   const system: ChatMessage = {
     role: 'system',
-    content: `${SOPHIE_SYSTEM_PROMPT}
+    content: `${sophieSystem}
 
 Current studio snapshot (also refresh via get_studio_state tool):
 ${JSON.stringify(body.studioState ?? {}, null, 2)}

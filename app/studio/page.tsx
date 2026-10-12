@@ -32,6 +32,7 @@ import { chatWithSophie } from '@/components/sophie-chat';
 import { SOPHIE_STARTER } from '@/prompts/sophie';
 import { useStudioProject, type StudioTab } from '@/components/studio-actions';
 import { EditorClipsPanel, EditorInspector, ProjectEditor } from '@/components/project-editor';
+import { fetchBlocks, type Block } from '@/lib/blocks';
 
 type ChatMsg = { id: string; role: 'user' | 'assistant' | 'system'; text: string };
 const tabs = [
@@ -51,6 +52,9 @@ export default function Studio() {
     setScenes,
     selected,
     setSelected,
+    playhead,
+    setPlayhead,
+    tracks,
     template,
     website,
     setWebsite,
@@ -69,6 +73,8 @@ export default function Studio() {
     setSceneImage,
     chooseTemplate,
     getState,
+    getTimeline,
+    proposeTimelineEdits,
     setBrief,
     setPendingProposal,
     reviewProposal,
@@ -91,12 +97,44 @@ export default function Studio() {
   const [falConnected, setFalConnected] = useState(false);
   const [chatBusy, setChatBusy] = useState(false);
   const [analyzeBusy, setAnalyzeBusy] = useState(false);
+  const [blocks, setBlocks] = useState<Block[]>([]);
 
   useEffect(() => {
     setKeyDraft(openaiKey || getOpenAIKey());
     setFalDraft(getFalKey());
     setFalConnected(hasFalKey());
   }, [openaiKey]);
+
+  useEffect(() => {
+    if (tab !== 'Assets') return;
+    let cancelled = false;
+    void fetchBlocks().then((rows) => {
+      if (!cancelled) setBlocks(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, scenes]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch('/api/prompts/sophie_starter')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const body = data?.prompt?.body;
+        if (!cancelled && typeof body === 'string' && body.trim()) {
+          setChat((prev) =>
+            prev.length === 1 && prev[0]?.id === 'm0'
+              ? [{ id: 'm0', role: 'assistant', text: body }]
+              : prev,
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!notice) return;
@@ -126,14 +164,30 @@ export default function Studio() {
     setNotice('Template selected. Your storyboard is ready to edit.');
   }
 
+  function seekTimeline(t: number) {
+    const total = Math.max(0.001, scenes.reduce((n, s) => n + s.duration, 0));
+    const clamped = Math.max(0, Math.min(total, t));
+    setPlayhead(clamped);
+    let acc = 0;
+    for (const s of scenes) {
+      if (clamped < acc + s.duration) {
+        setSelected(s.id);
+        break;
+      }
+      acc += s.duration;
+    }
+  }
+
   useWebMCP(
     {
       preview: setPreview,
       start: onChooseTemplate,
       getState: () => ({ ...getState(), tab }),
+      getTimeline,
+      proposeTimelineEdits,
       selectScene: (id) => {
         selectScene(id);
-        setTab('Overview');
+        setTab('Editor');
       },
       setWebsite,
       setBrief,
@@ -223,6 +277,8 @@ export default function Studio() {
         },
         actions: {
           getState: () => ({ ...getState(), tab }),
+          getTimeline,
+          proposeTimelineEdits,
           preview: setPreview,
           selectScene: (id) => {
             selectScene(id);
@@ -541,8 +597,19 @@ export default function Studio() {
               project={project}
               scenes={scenes}
               selected={selected}
+              playhead={playhead}
+              tracks={tracks}
               onSelect={selectScene}
+              onSeek={seekTimeline}
               onProjectChange={setProject}
+              onTimelineOps={(ops, plan) => {
+                try {
+                  proposeTimelineEdits({ plan, ops });
+                  setNotice('Timeline updated.');
+                } catch (err) {
+                  setNotice(err instanceof Error ? err.message : 'Timeline edit failed');
+                }
+              }}
             />
           )}
 
@@ -556,20 +623,23 @@ export default function Studio() {
                   : 'Demo imagery for now. Connect fal.ai to generate stills with Sophie.'}
               </p>
               <div className="asset-grid">
-                {scenes.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => {
-                      selectScene(s.id);
-                      setTab('Editor');
-                    }}
-                  >
-                    <img src={s.image} alt={s.title} />
-                    <span>
-                      {s.title} <ArrowUpRight size={16} />
-                    </span>
-                  </button>
-                ))}
+                {(blocks.length ? blocks : scenes.map((s) => ({ id: s.id, image: s.image, description: s.title }))).map(
+                  (b) => (
+                    <button
+                      key={b.id}
+                      onClick={() => {
+                        const match = scenes.find((s) => s.title === b.description);
+                        if (match) selectScene(match.id);
+                        setTab('Editor');
+                      }}
+                    >
+                      <img src={b.image} alt={b.description} />
+                      <span>
+                        {b.description} <ArrowUpRight size={16} />
+                      </span>
+                    </button>
+                  ),
+                )}
               </div>
             </section>
           )}

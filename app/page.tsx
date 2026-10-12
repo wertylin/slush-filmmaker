@@ -98,7 +98,7 @@ export default function Landing() {
   </video>
 </div><header className="topbar container"><Logo/><nav className={menu ? 'nav open' : 'nav'}><a href="#templates" onClick={()=>setMenu(false)}>Templates</a><a href="#how-it-works" onClick={()=>setMenu(false)}>How it works</a><a href="#collaboration" onClick={()=>setMenu(false)}>Made for founders</a></nav><Link href="/studio" className="button small outline desktop-cta">Open studio <ArrowUpRight size={16}/></Link><button className="mobile-menu icon-button" onClick={()=>setMenu(!menu)} aria-label="Toggle menu">{menu ? <X/> : <Menu/>}</button></header>
  <div className="entrance-stage container">
-   <div className="entrance-copy"><h1>YOU BUILD<br/>THE FUTURE.<br/><span>WE MAKE IT<br/>A FILM.</span></h1><p>Your ambition. Your story. A film that makes people feel it.</p><div className="hero-actions"><Link href="/studio" className="button primary">Create your founder film <ArrowUpRight size={19}/></Link><button className="text-button" onClick={()=>setPreview('founder')}><span className="play-small"><Play size={13} fill="currentColor"/></span> Explore a template</button></div>
+   <div className="entrance-copy"><h1>YOU BUILD<br/>THE FUTURE.<br/><span>WE MAKE IT<br/>A FILM.</span></h1><p>Your ambition. Your story. A film that makes people feel it. <em>All on your browser.</em></p><div className="hero-actions"><Link href="/studio" className="button primary">Create your founder film <ArrowUpRight size={19}/></Link><button className="text-button" onClick={()=>setPreview('founder')}><span className="play-small"><Play size={13} fill="currentColor"/></span> Explore a template</button></div>
    </div>
    <div className="entrance-side">
      <ExampleFilm />

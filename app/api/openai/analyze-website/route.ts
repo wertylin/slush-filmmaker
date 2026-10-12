@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getPrompt } from '@/lib/prompts-db';
 import { fetchPublicText, htmlToText } from '@/lib/ssrf';
 
 type Brief = {
@@ -87,16 +88,7 @@ export async function POST(request: Request) {
       messages: [
         {
           role: 'system',
-          content: `Extract a founder-film brief from website text. Return JSON only:
-{
-  "product": "what they build",
-  "audience": "who it is for",
-  "tone": "brand/voice tone",
-  "claims": ["facts grounded in the provided text"],
-  "sources": ["short quotes or labels from the text that support claims"],
-  "uncertain": ["gaps, guesses, or missing info — never invent facts"]
-}
-Only use the provided page text. Put speculation only in uncertain.`,
+          content: await getPrompt('analyze_website'),
         },
         {
           role: 'user',

@@ -28,18 +28,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import type { Scene } from '@/components/studio-actions';
-
-const TRACKS = [
-  { id: 'scenes', label: 'Scenes', color: 'var(--red)' },
-  { id: 'founder', label: 'Founder Video', color: '#3b82f6' },
-  { id: 'product', label: 'Product Screens', color: '#22c55e' },
-  { id: 'broll', label: 'B-roll', color: '#eab308' },
-  { id: 'titles', label: 'Titles', color: '#f97316' },
-  { id: 'vo', label: 'Voiceover', color: '#a855f7' },
-  { id: 'music', label: 'Music', color: '#14b8a6' },
-  { id: 'sfx', label: 'SFX', color: '#64748b' },
-  { id: 'captions', label: 'Captions', color: '#8b5cf6' },
-] as const;
+import type { TimelineTrack } from '@/components/timeline';
 
 type ClipTab = 'Clips' | 'Scenes' | 'Audio';
 type InspectorTab = 'Scene' | 'Clip' | 'Style';
@@ -240,22 +229,29 @@ export function ProjectEditor({
   project,
   scenes,
   selected,
+  playhead,
+  tracks,
   onSelect,
+  onSeek,
   onProjectChange,
+  onTimelineOps,
 }: {
   project: string;
   scenes: Scene[];
   selected: string;
+  playhead: number;
+  tracks: TimelineTrack[];
   onSelect: (id: string) => void;
+  onSeek: (t: number) => void;
   onProjectChange: (name: string) => void;
+  onTimelineOps?: (ops: Array<Record<string, unknown>>, plan: string) => void;
 }) {
   const [playing, setPlaying] = useState(false);
-  const [playhead, setPlayhead] = useState(0.22);
 
-  const total = scenes.reduce((n, s) => n + s.duration, 0);
+  const total = Math.max(1, scenes.reduce((n, s) => n + s.duration, 0));
   const scene = scenes.find((s) => s.id === selected) || scenes[0];
   const sceneIndex = Math.max(0, scenes.findIndex((s) => s.id === scene.id));
-  const currentTime = playhead * total;
+  const playheadRatio = Math.min(1, Math.max(0, playhead / total));
 
   const sceneBlocks = useMemo(() => {
     let t = 0;
@@ -324,25 +320,14 @@ export function ProjectEditor({
               min={0}
               max={1}
               step={0.001}
-              value={playhead}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                setPlayhead(v);
-                let acc = 0;
-                for (const s of scenes) {
-                  if (v * total < acc + s.duration) {
-                    onSelect(s.id);
-                    break;
-                  }
-                  acc += s.duration;
-                }
-              }}
+              value={playheadRatio}
+              onChange={(e) => onSeek(Number(e.target.value) * total)}
               aria-label="Scrub timeline"
             />
           </div>
           <div className="nle-transport">
             <span>
-              {formatTime(currentTime)} / {formatTime(total)}
+              {formatTime(playhead)} / {formatTime(total)}
             </span>
             <div className="nle-transport-center">
               <button
@@ -380,13 +365,32 @@ export function ProjectEditor({
 
         <div className="nle-tools">
           <div className="nle-tools-left">
-            <button type="button">
+            <button
+              type="button"
+              onClick={() =>
+                onTimelineOps?.(
+                  [{ op: 'add_scene', afterSceneId: scene.id, title: 'New beat', caption: '', duration: 5 }],
+                  'Add scene after selection',
+                )
+              }
+            >
               <CopyPlus size={14} /> Add
             </button>
-            <button type="button">
+            <button
+              type="button"
+              onClick={() =>
+                onTimelineOps?.(
+                  [{ op: 'split_scene', sceneId: scene.id, at: Math.max(1, scene.duration / 2) }],
+                  'Split selected scene',
+                )
+              }
+            >
               <Scissors size={14} /> Split
             </button>
-            <button type="button">
+            <button
+              type="button"
+              onClick={() => onTimelineOps?.([{ op: 'delete_scene', sceneId: scene.id }], 'Delete selected scene')}
+            >
               <Trash2 size={14} /> Delete
             </button>
             <button type="button" className="accent">
@@ -416,76 +420,37 @@ export function ProjectEditor({
             ))}
           </div>
           <div className="nle-tracks">
-            {TRACKS.map((track) => (
+            {tracks.map((track) => (
               <div className="nle-track" key={track.id}>
                 <div className="nle-track-label">{track.label}</div>
                 <div className="nle-track-lane">
-                  {track.id === 'scenes' &&
-                    sceneBlocks.map((b) => (
-                      <button
-                        key={b.id}
-                        type="button"
-                        className={`nle-block ${selected === b.id ? 'active' : ''}`}
-                        style={{ left: `${b.left}%`, width: `${b.width}%`, background: track.color }}
-                        onClick={() => {
-                          onSelect(b.id);
-                          setPlayhead((b.start + b.duration / 2) / total);
-                        }}
-                      >
-                        {b.title}
-                      </button>
-                    ))}
-                  {track.id === 'founder' && (
-                    <div className="nle-block soft" style={{ left: '8%', width: '55%', background: track.color }}>
-                      Founder A-cam
-                    </div>
-                  )}
-                  {track.id === 'product' && (
-                    <div className="nle-block soft" style={{ left: '38%', width: '28%', background: track.color }}>
-                      Product UI
-                    </div>
-                  )}
-                  {track.id === 'broll' && (
-                    <>
-                      <div className="nle-block soft" style={{ left: '12%', width: '18%', background: track.color }}>
-                        City
-                      </div>
-                      <div className="nle-block soft" style={{ left: '62%', width: '22%', background: track.color }}>
-                        Crowd
-                      </div>
-                    </>
-                  )}
-                  {track.id === 'titles' && (
-                    <div className="nle-block soft" style={{ left: '0%', width: '16%', background: track.color }}>
-                      Open title
-                    </div>
-                  )}
-                  {track.id === 'vo' && (
-                    <div className="nle-block soft" style={{ left: '5%', width: '70%', background: track.color }}>
-                      Founder VO
-                    </div>
-                  )}
-                  {track.id === 'music' && (
-                    <div className="nle-block soft" style={{ left: '0%', width: '100%', background: track.color }}>
-                      Underscore
-                    </div>
-                  )}
-                  {track.id === 'sfx' && (
-                    <div className="nle-block soft" style={{ left: '48%', width: '8%', background: track.color }}>
-                      Hit
-                    </div>
-                  )}
-                  {track.id === 'captions' &&
-                    sceneBlocks.map((b) => (
-                      <div
-                        key={`cap-${b.id}`}
-                        className="nle-block soft"
-                        style={{ left: `${b.left}%`, width: `${b.width}%`, background: track.color }}
-                      >
-                        CC
-                      </div>
-                    ))}
-                  <div className="nle-playhead" style={{ left: `${playhead * 100}%` }} />
+                  {track.id === 'scenes'
+                    ? sceneBlocks.map((b) => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          className={`nle-block ${selected === b.id ? 'active' : ''}`}
+                          style={{ left: `${b.left}%`, width: `${b.width}%`, background: track.color }}
+                          onClick={() => onSelect(b.id)}
+                        >
+                          {b.title}
+                        </button>
+                      ))
+                    : track.clips.map((clip) => (
+                        <div
+                          key={clip.id}
+                          className="nle-block soft"
+                          style={{
+                            left: `${(clip.start / total) * 100}%`,
+                            width: `${Math.max(1.2, (clip.duration / total) * 100)}%`,
+                            background: track.color,
+                          }}
+                          title={clip.label}
+                        >
+                          {clip.label}
+                        </div>
+                      ))}
+                  <div className="nle-playhead" style={{ left: `${playheadRatio * 100}%` }} />
                 </div>
               </div>
             ))}
@@ -494,7 +459,7 @@ export function ProjectEditor({
       </div>
 
       <div className="nle-footnote">
-        <span>UI shell — editing actions not wired yet</span>
+        <span>Agent-editable via WebMCP get_timeline / propose_timeline_edits</span>
         <a href="#top">
           Open full preview <ArrowUpRight size={13} />
         </a>

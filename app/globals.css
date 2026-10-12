@@ -218,10 +218,15 @@ small { display: block; color: var(--dim); font-size: 12px; }
 }
 .entrance-copy h1 span { color: var(--red); }
 .entrance-copy > p {
-  max-width: 38ch;
+  max-width: 42ch;
   color: rgba(244, 244, 245, 0.78);
   font-size: 18px;
   margin-bottom: 28px;
+}
+.entrance-copy > p em {
+  font-style: normal;
+  color: #fff;
+  font-weight: 600;
 }
 
 .entrance-side {

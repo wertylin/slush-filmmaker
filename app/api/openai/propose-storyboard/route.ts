@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getPrompt } from '@/lib/prompts-db';
 
 const TEMPLATE_IDS = ['founder', 'pitch', 'launch', 'update'] as const;
 
@@ -101,15 +102,7 @@ export async function POST(request: Request) {
       messages: [
         {
           role: 'system',
-          content: `You write founder-film storyboards. Return JSON only:
-{
-  "projectTitle": "short project title",
-  "diffSummary": "1-2 sentence summary of the proposal vs a generic demo board",
-  "scenes": [
-    { "id": "scene-1", "title": "...", "caption": "spoken/on-screen line", "duration": 6 }
-  ]
-}
-Rules: exactly ${sceneCount} scenes; durations 4–12s; captions concrete and filmable; no claims of generated video/images; template mood = ${templateId}.`,
+          content: await getPrompt('storyboard', { sceneCount, templateId }),
         },
         {
           role: 'user',
