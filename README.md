@@ -60,28 +60,8 @@ See [`WEBMCP-AGENT-REQUESTS.md`](./WEBMCP-AGENT-REQUESTS.md) for agent-facing no
 
 ---
 
-## Setup
-
-```bash
-npm i
-npm run dev
-```
-
-→ [http://localhost:3000](http://localhost:3000)
-
-Optional server `.env` (see `.env.example`). Image gen and agent chat use founder BYOK in **Connections**; server keys are optional.
-
-```
-OPENAI_API_KEY=
-FAL_AI_KEY=
-DATABASE_URL=          # Neon — projects / prompts persistence
-DATABASE_URL_UNPOOLED=
-```
-
----
-
 ## Stack
 
-**Next.js · React · WebMCP · BYOK OpenAI + fal.ai · Neon (optional persistence)**
+**Next.js · React · WebMCP · BYOK OpenAI + fal.ai**
 
 Built for agents that can see the page — and for founders who never leave the browser.
