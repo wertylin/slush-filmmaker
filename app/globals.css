@@ -778,6 +778,51 @@ small { display: block; color: var(--dim); font-size: 12px; }
 .settings-field input:focus {
   border-color: rgba(225, 6, 0, 0.55);
 }
+.settings-field input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.guest-mode-card {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--muted);
+}
+.guest-mode-card:hover {
+  border-color: rgba(225, 6, 0, 0.4);
+  color: #fff;
+}
+.guest-mode-card.active {
+  border-color: rgba(225, 6, 0, 0.65);
+  background: var(--red-soft);
+  color: #fff;
+}
+.guest-mode-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+.guest-mode-card-top b {
+  font-size: 15px;
+  color: #fff;
+}
+.guest-mode-card-top small {
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.guest-mode-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
 .proposal-modal {
   width: min(720px, 100%);
   max-height: min(86vh, 900px);
@@ -2282,8 +2327,11 @@ small { display: block; color: var(--dim); font-size: 12px; }
   text-overflow: ellipsis;
 }
 .nle-block.soft {
-  pointer-events: none;
-  opacity: 0.72;
+  opacity: 0.85;
+  cursor: pointer;
+}
+.nle {
+  outline: none;
 }
 .nle-block.active {
   outline: 2px solid #fff;

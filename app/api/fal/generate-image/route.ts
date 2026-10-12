@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { buildFalInput, extractFalImageUrl, resolveFalModel } from '@/lib/fal-models';
+import { resolveFalKey } from '@/lib/server-keys';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   let body: {
     key?: string;
+    guest?: boolean;
     prompt?: string;
     sceneTitle?: string;
     modelKey?: string;
@@ -19,11 +21,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  // BYOK only — never fall back to server .env (founder must paste their own fal key).
-  const key = String(body.key || '').trim();
-  if (key.length < 16) {
-    return NextResponse.json({ error: 'Missing or invalid fal.ai key' }, { status: 401 });
+  const auth = resolveFalKey(body);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const key = auth.key;
 
   const prompt = String(body.prompt || '').trim();
   if (prompt.length < 3) {

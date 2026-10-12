@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getPrompt } from '@/lib/prompts-db';
+import { resolveOpenAIKey } from '@/lib/server-keys';
 
 type ChatMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -216,6 +217,7 @@ const TOOLS = [
 export async function POST(request: Request) {
   let body: {
     key?: string;
+    guest?: boolean;
     messages?: ChatMessage[];
     studioState?: unknown;
   };
@@ -226,10 +228,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const key = String(body.key || '').trim();
-  if (!key.startsWith('sk-')) {
-    return NextResponse.json({ error: 'Missing or invalid OpenAI key' }, { status: 401 });
+  const auth = resolveOpenAIKey(body);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const key = auth.key;
 
   const history = Array.isArray(body.messages) ? body.messages : [];
   const sophieSystem = await getPrompt('sophie_system');

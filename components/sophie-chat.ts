@@ -134,7 +134,8 @@ async function runTool(name: string, args: Record<string, unknown>, fallback: To
 }
 
 export async function chatWithSophie(opts: {
-  key: string;
+  key?: string;
+  guest?: boolean;
   history: Array<{ role: 'user' | 'assistant'; text: string }>;
   userText: string;
   studioState: StudioSnapshot;
@@ -145,12 +146,14 @@ export async function chatWithSophie(opts: {
     { role: 'user', content: opts.userText },
   ];
 
+  const auth = opts.guest ? { guest: true as const } : { key: String(opts.key || '') };
+
   for (let step = 0; step < 8; step++) {
     const res = await fetch('/api/openai/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        key: opts.key,
+        ...auth,
         messages,
         studioState: opts.studioState,
       }),

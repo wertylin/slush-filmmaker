@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getPrompt } from '@/lib/prompts-db';
+import { resolveOpenAIKey } from '@/lib/server-keys';
 import { fetchPublicText, htmlToText } from '@/lib/ssrf';
 
 type Brief = {
@@ -43,10 +44,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const key = String(body.key || '').trim();
-  if (!key.startsWith('sk-') || key.length < 20) {
-    return NextResponse.json({ error: 'byok_required' }, { status: 401 });
+  const auth = resolveOpenAIKey(body as { key?: string; guest?: boolean });
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error === 'Missing or invalid OpenAI key' ? 'byok_required' : auth.error }, { status: auth.status });
   }
+  const key = auth.key;
 
   const rawUrl = String(body.url || '').trim();
   if (!rawUrl) {

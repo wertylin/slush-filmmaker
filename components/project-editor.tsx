@@ -52,6 +52,7 @@ import {
 export type PlaceTarget = { trackId: MediaTrackId; start?: number };
 
 type InspectorTab = 'Scene' | 'Clip' | 'Style';
+type SelectedClip = { trackId: TrackId; clipId: string };
 
 function formatTime(totalSec: number) {
   const s = Math.max(0, Math.floor(totalSec));
@@ -62,9 +63,22 @@ function formatTime(totalSec: number) {
 
 function canAcceptEditorDrop(dt: DataTransfer, allowFiles: boolean, allowAsset: boolean) {
   const types = Array.from(dt.types);
-  if (allowAsset && types.includes(SLUSH_ASSET_MIME)) return true;
+  if (allowAsset && (types.includes(SLUSH_ASSET_MIME) || types.includes('text/plain'))) return true;
   if (allowFiles && types.includes('Files')) return true;
   return false;
+}
+
+/** Tracks that accept library/file drops as timeline clips (not scenes/captions). */
+function acceptsClipDrop(trackId: TrackId) {
+  return trackId !== 'scenes' && trackId !== 'captions';
+}
+
+function timeFromLaneEvent(e: { currentTarget: EventTarget; clientX: number }, total: number) {
+  const lane = e.currentTarget as HTMLElement;
+  const rect = lane.getBoundingClientRect();
+  if (rect.width <= 0) return 0;
+  const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+  return Math.round(ratio * total * 10) / 10;
 }
 
 function useMediaDropZone(
@@ -245,7 +259,7 @@ export function EditorClipsPanel({
               type="button"
               draggable
               className={`editor-clip-row ${item.layered ? 'active' : ''}`}
-              title="Click → B-roll · drag onto Founder / Product / B-roll"
+              title="Click → B-roll · drag onto a timeline track or the preview"
               onDragStart={(e) => {
                 const raw = JSON.stringify(item.payload);
                 e.dataTransfer.setData(SLUSH_ASSET_MIME, raw);
@@ -376,6 +390,7 @@ export function ProjectEditor({
   onNotice,
   onReplaceMedia,
   onApplyAsset,
+  onApplyAssetToScene,
   onPlaceMedia,
 }: {
   project: string;
@@ -388,10 +403,12 @@ export function ProjectEditor({
   onProjectChange: (name: string) => void;
   onTimelineOps?: (ops: Array<Record<string, unknown>>, plan: string) => void;
   onNotice?: (text: string) => void;
-  /** Replace shot button — writes into the selected scene still */
-  onReplaceMedia?: (media: IngestedMedia) => void | Promise<void>;
+  /** Replace shot — writes into scene still (optional sceneId for lane drop) */
+  onReplaceMedia?: (media: IngestedMedia, sceneId?: string) => void | Promise<void>;
   /** Place library asset as a layered clip (CapCut-style) */
   onApplyAsset?: (asset: SlushAssetPayload, target?: PlaceTarget) => void;
+  /** Player / scenes-lane drop — write asset onto a scene still */
+  onApplyAssetToScene?: (asset: SlushAssetPayload, sceneId: string) => void | Promise<void>;
   /** File drop → library + layered clip */
   onPlaceMedia?: (file: File, target?: PlaceTarget) => void | Promise<void>;
 }) {
@@ -400,38 +417,49 @@ export function ProjectEditor({
   const [exporting, setExporting] = useState(false);
   const [exportPct, setExportPct] = useState(0);
   const [ingestBusy, setIngestBusy] = useState(false);
-  const [laneDropTrack, setLaneDropTrack] = useState<MediaTrackId | null>(null);
-  const [selectedClip, setSelectedClip] = useState<{ trackId: TrackId; clipId: string } | null>(null);
+  const [laneDropTrack, setLaneDropTrack] = useState<TrackId | null>(null);
+  const [selectedClip, setSelectedClip] = useState<SelectedClip | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayVideoRef = useRef<HTMLVideoElement>(null);
 
-  const placeOnTrack = (trackId: MediaTrackId, start?: number) => ({ trackId, start: start ?? playhead });
+  const placeOnTrack = (trackId: MediaTrackId, start?: number): PlaceTarget => ({
+    trackId,
+    start: start ?? playhead,
+  });
 
   const { dragging, dropHandlers } = useMediaDropZone(
-    onPlaceMedia
+    onReplaceMedia
       ? async (file) => {
           setIngestBusy(true);
           try {
-            await onPlaceMedia(file, placeOnTrack('broll'));
+            const media = await ingestMediaFile(file);
+            await onReplaceMedia(media);
           } finally {
             setIngestBusy(false);
           }
         }
       : undefined,
     onNotice,
-    onApplyAsset
+    onApplyAssetToScene
       ? (asset) => {
-          onApplyAsset(asset, placeOnTrack('broll'));
+          const sceneId = selected || scenes[0]?.id;
+          if (!sceneId) {
+            onNotice?.('No scene to apply media to.');
+            return;
+          }
+          return onApplyAssetToScene(asset, sceneId);
         }
       : undefined,
   );
 
   function onLaneDragOver(e: DragEvent, trackId: TrackId) {
-    if (!isMediaTrackId(trackId)) return;
-    if (!onApplyAsset && !onPlaceMedia) return;
-    if (!isSlushAssetDrag(e.dataTransfer) && !Array.from(e.dataTransfer.types).includes('Files')) return;
+    const allowClip = acceptsClipDrop(trackId) && (!!onApplyAsset || !!onPlaceMedia);
+    const allowScene = trackId === 'scenes' && (!!onApplyAssetToScene || !!onReplaceMedia);
+    if (!allowClip && !allowScene) return;
+    if (!canAcceptEditorDrop(e.dataTransfer, allowClip || allowScene, allowClip || allowScene)) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'copy';
@@ -439,32 +467,148 @@ export function ProjectEditor({
   }
 
   function onLaneDrop(e: DragEvent, trackId: TrackId) {
-    if (!isMediaTrackId(trackId)) return;
     e.preventDefault();
     e.stopPropagation();
     setLaneDropTrack(null);
-    const target = placeOnTrack(trackId);
+    const dropTime = timeFromLaneEvent(e, Math.max(1, scenes.reduce((n, s) => n + s.duration, 0)));
 
-    if (onApplyAsset && isSlushAssetDrag(e.dataTransfer)) {
+    if (trackId === 'scenes') {
+      let acc = 0;
+      let hitId = selected || scenes[0]?.id;
+      for (const s of scenes) {
+        if (dropTime >= acc && dropTime < acc + s.duration) {
+          hitId = s.id;
+          break;
+        }
+        acc += s.duration;
+      }
+      if (!hitId) {
+        onNotice?.('No scene to apply media to.');
+        return;
+      }
+
+      if (onApplyAssetToScene && (isSlushAssetDrag(e.dataTransfer) || e.dataTransfer.getData('text/plain'))) {
+        const asset = parseSlushAssetDrag(e.dataTransfer);
+        if (!asset) {
+          onNotice?.('Could not read asset');
+          return;
+        }
+        void Promise.resolve(onApplyAssetToScene(asset, hitId)).catch((err) =>
+          onNotice?.(err instanceof Error ? err.message : 'Drop failed'),
+        );
+        return;
+      }
+
+      if (!onReplaceMedia) return;
+      const file = pickMediaFile(e.dataTransfer.files);
+      if (!file) {
+        onNotice?.('Drop an image or video');
+        return;
+      }
+      setIngestBusy(true);
+      void ingestMediaFile(file)
+        .then((media) => onReplaceMedia(media, hitId))
+        .catch((err) => onNotice?.(err instanceof Error ? err.message : 'Drop failed'))
+        .finally(() => setIngestBusy(false));
+      return;
+    }
+
+    if (!acceptsClipDrop(trackId)) return;
+    const mediaTrack = isMediaTrackId(trackId) ? trackId : 'broll';
+    const target = placeOnTrack(mediaTrack, dropTime);
+    // Non-media tracks (titles/vo/…) still upsert via onApplyAsset when trackId is MediaTrackId;
+    // for titles/vo/music/sfx use onTimelineOps upsert directly if not a media track.
+    const placeViaOps = !isMediaTrackId(trackId);
+
+    if (onApplyAsset && (isSlushAssetDrag(e.dataTransfer) || e.dataTransfer.getData(SLUSH_ASSET_MIME) || e.dataTransfer.getData('text/plain'))) {
       const asset = parseSlushAssetDrag(e.dataTransfer);
       if (!asset) {
         onNotice?.('Could not read asset');
+        return;
+      }
+      if (placeViaOps && onTimelineOps) {
+        onTimelineOps(
+          [
+            {
+              op: 'upsert_clip',
+              trackId,
+              clip: {
+                label: asset.description,
+                start: dropTime,
+                duration: Math.max(1, Math.min(60, Number(asset.duration) || 6)),
+                image: asset.image,
+                video: asset.video,
+              },
+            },
+          ],
+          `Place “${asset.description}” on ${trackId}`,
+        );
         return;
       }
       onApplyAsset(asset, target);
       return;
     }
 
-    if (!onPlaceMedia) return;
+    if (!onPlaceMedia && !(placeViaOps && onTimelineOps)) return;
     const file = pickMediaFile(e.dataTransfer.files);
     if (!file) {
       onNotice?.('Drop an image or video');
       return;
     }
+    if (placeViaOps && onTimelineOps) {
+      setIngestBusy(true);
+      void ingestMediaFile(file)
+        .then((media) => {
+          onTimelineOps(
+            [
+              {
+                op: 'upsert_clip',
+                trackId,
+                clip: {
+                  label: media.fileName.replace(/\.[^.]+$/, '') || media.fileName,
+                  start: dropTime,
+                  duration: Math.max(1, Math.min(60, Number(media.durationHint) || 6)),
+                  image: media.imageUrl,
+                  video: media.videoUrl,
+                },
+              },
+            ],
+            `Place “${media.fileName}” on ${trackId}`,
+          );
+        })
+        .catch((err) => onNotice?.(err instanceof Error ? err.message : 'Drop failed'))
+        .finally(() => setIngestBusy(false));
+      return;
+    }
     setIngestBusy(true);
-    void Promise.resolve(onPlaceMedia(file, target))
+    void Promise.resolve(onPlaceMedia!(file, target))
       .catch((err) => onNotice?.(err instanceof Error ? err.message : 'Drop failed'))
       .finally(() => setIngestBusy(false));
+  }
+
+  function selectClip(trackId: TrackId, clipId: string, start: number, duration: number) {
+    setSelectedClip({ trackId, clipId });
+    onSeek(start + Math.min(0.2, duration / 2));
+    rootRef.current?.focus();
+  }
+
+  function deleteSelection() {
+    if (!onTimelineOps) return false;
+    if (selectedClip) {
+      onTimelineOps(
+        [{ op: 'delete_clip', trackId: selectedClip.trackId, clipId: selectedClip.clipId }],
+        'Delete selected clip',
+      );
+      setSelectedClip(null);
+      return true;
+    }
+    const current = scenes.find((s) => s.id === selected) || scenes[0];
+    if (!current || scenes.length <= 1) {
+      onNotice?.('Need at least one scene.');
+      return false;
+    }
+    onTimelineOps([{ op: 'delete_scene', sceneId: current.id }], 'Delete selected scene');
+    return true;
   }
 
   useEffect(() => {
@@ -491,23 +635,13 @@ export function ProjectEditor({
         return;
       }
       if (!onTimelineOps) return;
-      if (selectedClip) {
-        e.preventDefault();
-        onTimelineOps(
-          [{ op: 'delete_clip', trackId: selectedClip.trackId, clipId: selectedClip.clipId }],
-          'Delete selected clip',
-        );
-        setSelectedClip(null);
-        return;
-      }
-      const current = scenes.find((s) => s.id === selected) || scenes[0];
-      if (!current || scenes.length <= 1) return;
-      e.preventDefault();
-      onTimelineOps([{ op: 'delete_scene', sceneId: current.id }], 'Delete selected scene');
+      if (deleteSelection()) e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onTimelineOps, scenes, selected, selectedClip]);
+    // deleteSelection closes over latest selectedClip/scenes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onTimelineOps, scenes, selected, selectedClip, onNotice]);
 
   const total = Math.max(1, scenes.reduce((n, s) => n + s.duration, 0));
   const scene = scenes.find((s) => s.id === selected) || scenes[0];
@@ -586,7 +720,17 @@ export function ProjectEditor({
   }
 
   return (
-    <div className="nle">
+    <div
+      className="nle"
+      ref={rootRef}
+      tabIndex={0}
+      onMouseDown={(e) => {
+        // Keep focus on editor shell unless typing into a field
+        const t = e.target as HTMLElement;
+        if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return;
+        rootRef.current?.focus();
+      }}
+    >
       <header className="nle-topbar">
         <div className="nle-project">
           <input
@@ -692,7 +836,7 @@ export function ProjectEditor({
             </span>
             {dragging || ingestBusy ? (
               <div className="nle-drop-overlay">
-                {ingestBusy ? 'Reading media…' : 'Drop onto B-roll at playhead'}
+                {ingestBusy ? 'Reading media…' : 'Drop to replace this scene’s shot'}
               </div>
             ) : null}
           </div>
@@ -791,22 +935,7 @@ export function ProjectEditor({
             >
               <Scissors size={14} /> Split
             </button>
-            <button
-              type="button"
-              disabled={!selectedClip && !scene}
-              onClick={() => {
-                if (selectedClip) {
-                  onTimelineOps?.(
-                    [{ op: 'delete_clip', trackId: selectedClip.trackId, clipId: selectedClip.clipId }],
-                    'Delete selected clip',
-                  );
-                  setSelectedClip(null);
-                  return;
-                }
-                if (!scene) return;
-                onTimelineOps?.([{ op: 'delete_scene', sceneId: scene.id }], 'Delete selected scene');
-              }}
-            >
+            <button type="button" disabled={!selectedClip && !scene} onClick={() => deleteSelection()}>
               <Trash2 size={14} /> Delete
             </button>
             <button type="button" className="accent">
@@ -842,15 +971,14 @@ export function ProjectEditor({
           <div className="nle-tracks">
             {tracks.map((track) => {
               const mediaLane = isMediaTrackId(track.id);
+              const droppable = acceptsClipDrop(track.id) || track.id === 'scenes';
               return (
                 <div className="nle-track" key={track.id}>
                   <div className="nle-track-label">{track.label}</div>
                   <div
-                    className={`nle-track-lane${laneDropTrack === track.id ? ' is-drop-target' : ''}${mediaLane ? ' accepts-media' : ''}`}
+                    className={`nle-track-lane${laneDropTrack === track.id ? ' is-drop-target' : ''}${mediaLane || droppable ? ' accepts-media' : ''}`}
                     onDragOver={(e) => onLaneDragOver(e, track.id)}
-                    onDragLeave={() =>
-                      setLaneDropTrack((cur) => (cur === track.id ? null : cur))
-                    }
+                    onDragLeave={() => setLaneDropTrack((cur) => (cur === track.id ? null : cur))}
                     onDrop={(e) => onLaneDrop(e, track.id)}
                   >
                     {track.id === 'scenes'
@@ -863,6 +991,7 @@ export function ProjectEditor({
                             onClick={() => {
                               setSelectedClip(null);
                               onSelect(b.id);
+                              rootRef.current?.focus();
                             }}
                           >
                             {b.title}
@@ -871,43 +1000,27 @@ export function ProjectEditor({
                       : track.clips.map((clip) => {
                           const active =
                             selectedClip?.trackId === track.id && selectedClip.clipId === clip.id;
-                          const media = mediaLane && !!clip.image;
-                          return media ? (
+                          const media = !!clip.image;
+                          return (
                             <button
                               key={clip.id}
                               type="button"
-                              className={`nle-block media ${active ? 'active' : ''}`}
+                              className={`nle-block ${media ? 'media' : 'soft'} ${active ? 'active' : ''}`}
                               style={{
                                 left: `${(clip.start / total) * 100}%`,
                                 width: `${Math.max(1.2, (clip.duration / total) * 100)}%`,
-                                backgroundImage: clip.image ? `url(${clip.image})` : undefined,
+                                backgroundImage: media ? `url(${clip.image})` : undefined,
                                 backgroundColor: track.color,
                               }}
-                              title={clip.label}
-                              onClick={() => {
-                                setSelectedClip({ trackId: track.id, clipId: clip.id });
-                                onSeek(clip.start + Math.min(0.2, clip.duration / 2));
-                              }}
+                              title={`${clip.label} · Delete to remove`}
+                              onClick={() => selectClip(track.id, clip.id, clip.start, clip.duration)}
                             >
-                              <span>{clip.label}</span>
+                              {media ? <span>{clip.label}</span> : clip.label}
                             </button>
-                          ) : (
-                            <div
-                              key={clip.id}
-                              className={`nle-block soft ${active ? 'active' : ''}`}
-                              style={{
-                                left: `${(clip.start / total) * 100}%`,
-                                width: `${Math.max(1.2, (clip.duration / total) * 100)}%`,
-                                background: track.color,
-                              }}
-                              title={clip.label}
-                            >
-                              {clip.label}
-                            </div>
                           );
                         })}
-                    {mediaLane && track.clips.length === 0 ? (
-                      <span className="nle-lane-hint">Drop media here</span>
+                    {droppable && track.id !== 'scenes' && track.clips.length === 0 ? (
+                      <span className="nle-lane-hint">Drop asset here</span>
                     ) : null}
                     <div className="nle-playhead" style={{ left: `${playheadRatio * 100}%` }} />
                   </div>

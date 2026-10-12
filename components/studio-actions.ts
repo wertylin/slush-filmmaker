@@ -236,7 +236,7 @@ export function useStudioProject() {
       if (cancelled) return;
       const key = getOpenAIKey();
       setOpenaiKey(key);
-      setAgentified(Boolean(key));
+      setAgentified(hasOpenAIKey());
       await fetchTemplates();
       const tid = new URLSearchParams(window.location.search).get('template');
       if (tid && isTemplateAvailable(tid)) {
@@ -570,8 +570,13 @@ export function useStudioProject() {
   }, [pushActivity]);
 
   const syncKey = useCallback((key: string) => {
+    if (key === 'guest') {
+      setOpenaiKey('');
+      setAgentified(true);
+      return;
+    }
     setOpenaiKey(key);
-    setAgentified(Boolean(key.trim()));
+    setAgentified(Boolean(key.trim()) || hasOpenAIKey());
   }, []);
 
   const newProject = useCallback(async () => {

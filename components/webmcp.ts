@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef } from 'react';
-import { hasOpenAIKey, requireFalKey, requireOpenAIKey } from './keys';
+import { falAuthBody, hasOpenAIKey, openaiAuthBody, requireFalKey, requireOpenAIKey } from './keys';
 import { STUDIO_TABS, type Scene, type StoryboardProposal, type StudioTab, type WebsiteBrief } from './studio-actions';
 import { fetchTemplates, getCachedTemplates, isTemplateAvailable, resolveTemplateId } from '@/lib/templates';
 
@@ -83,11 +83,11 @@ function normalizeWebsite(raw: string) {
   return url;
 }
 
-async function analyzeWebsiteRemote(url: string, key: string) {
+async function analyzeWebsiteRemote(url: string) {
   const res = await fetch('/api/openai/analyze-website', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, url }),
+    body: JSON.stringify({ ...openaiAuthBody(), url }),
   });
   const data = (await res.json().catch(() => ({}))) as { error?: string; brief?: WebsiteBrief };
   if (!res.ok || !data.brief) throw new Error(data.error || 'Website analysis failed');
@@ -95,7 +95,6 @@ async function analyzeWebsiteRemote(url: string, key: string) {
 }
 
 async function proposeStoryboardRemote(input: {
-  key: string;
   brief: unknown;
   templateId: string;
   sceneCount?: number;
@@ -103,7 +102,7 @@ async function proposeStoryboardRemote(input: {
   const res = await fetch('/api/openai/propose-storyboard', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...openaiAuthBody(), ...input }),
   });
   const data = (await res.json().catch(() => ({}))) as {
     error?: string;
@@ -132,7 +131,6 @@ async function listFalModelsRemote() {
 }
 
 async function generateSceneImageRemote(input: {
-  key: string;
   prompt: string;
   sceneTitle?: string;
   modelKey?: string;
@@ -142,7 +140,7 @@ async function generateSceneImageRemote(input: {
   const res = await fetch('/api/fal/generate-image', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...falAuthBody(), ...input }),
   });
   const data = (await res.json().catch(() => ({}))) as {
     error?: string;
@@ -403,9 +401,8 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
             throw new Error('generate_scene_image unavailable');
           }
 
-          let key: string;
           try {
-            key = requireFalKey();
+            requireFalKey();
           } catch {
             ref.current.openSettings?.();
             throw new Error('fal_byok_required');
@@ -427,7 +424,6 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
           const refUrls = Array.isArray(input.refUrls) ? input.refUrls.map(String).filter(Boolean) : [];
 
           const generated = await generateSceneImageRemote({
-            key,
             prompt,
             sceneTitle: scene?.title || 'still',
             modelKey,
@@ -484,10 +480,10 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
             additionalProperties: false,
           },
           execute: async (input) => {
-            const key = requireOpenAIKey();
+            requireOpenAIKey();
             const url = normalizeWebsite(String(input.url || ''));
             ref.current.setWebsite?.(url.href);
-            const brief = await analyzeWebsiteRemote(url.href, key);
+            const brief = await analyzeWebsiteRemote(url.href);
             ref.current.setBrief?.(brief);
             const host = url.hostname.replace(/^www\./, '');
             ref.current.pushActivity?.(`Website analyzed: ${host}`);
@@ -510,10 +506,9 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
             additionalProperties: false,
           },
           execute: async (input) => {
-            const key = requireOpenAIKey();
+            requireOpenAIKey();
             const templateId = valid(input);
             const proposal = await proposeStoryboardRemote({
-              key,
               brief: input.brief,
               templateId,
               sceneCount: input.sceneCount != null ? Number(input.sceneCount) : undefined,
