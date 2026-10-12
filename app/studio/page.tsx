@@ -33,9 +33,20 @@ import { getFalKey, getOpenAIKey, setFalKey, setOpenAIKey, hasFalKey, hasOpenAIK
 import { chatWithSophie } from '@/components/sophie-chat';
 import { SOPHIE_STARTER } from '@/prompts/sophie';
 import { useStudioProject, type StudioTab } from '@/components/studio-actions';
-import { EditorClipsPanel, EditorInspector, ProjectEditor } from '@/components/project-editor';
+import {
+  EditorClipsPanel,
+  EditorInspector,
+  ProjectEditor,
+  type PlaceTarget,
+} from '@/components/project-editor';
 import { addAssetSource, fetchBlocks, mergeAssetLibrary, readLocalSources, type Block } from '@/lib/blocks';
-import { durableImageUrl, ingestMediaFile, pickMediaFiles } from '@/lib/ingest-media';
+import {
+  durableImageUrl,
+  ingestMediaFile,
+  pickMediaFiles,
+  type IngestedMedia,
+  type SlushAssetPayload,
+} from '@/lib/ingest-media';
 
 type ChatMsg = { id: string; role: 'user' | 'assistant' | 'system'; text: string };
 const tabs = [
@@ -275,6 +286,71 @@ export default function Studio() {
     }
   }
 
+  function placeAssetOnTrack(asset: SlushAssetPayload, target?: PlaceTarget) {
+    const trackId = target?.trackId || 'broll';
+    const start = target?.start ?? playhead;
+    const duration = Math.max(1, Math.min(60, Number(asset.duration) || 6));
+    try {
+      proposeTimelineEdits({
+        plan: `Place “${asset.description}” on ${trackId}`,
+        ops: [
+          {
+            op: 'upsert_clip',
+            trackId,
+            clip: {
+              label: asset.description,
+              start,
+              duration,
+              image: asset.image,
+              video: asset.video,
+            },
+          },
+        ],
+      });
+      setNotice(`“${asset.description}” → ${trackId} @ ${start.toFixed(1)}s`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not place asset');
+    }
+  }
+
+  async function placeMediaOnTrack(media: IngestedMedia, target?: PlaceTarget) {
+    const trackId = target?.trackId || 'broll';
+    const start = target?.start ?? playhead;
+    const label = media.fileName.replace(/\.[^.]+$/, '') || media.fileName;
+    const duration = Math.max(1, Math.min(60, Number(media.durationHint) || 6));
+    try {
+      const image = await durableImageUrl(media.imageUrl);
+      const source = await addAssetSource({
+        image,
+        description: label,
+        caption: media.kind === 'video' ? `Uploaded video · ${media.fileName}` : `Uploaded · ${media.fileName}`,
+        duration,
+        prompt: label,
+      });
+      setBlocks((prev) => mergeAssetLibrary(prev, [source, ...readLocalSources()]));
+      setBlocksTick((n) => n + 1);
+      proposeTimelineEdits({
+        plan: `Place “${label}” on ${trackId}`,
+        ops: [
+          {
+            op: 'upsert_clip',
+            trackId,
+            clip: {
+              label,
+              start,
+              duration,
+              image,
+              video: media.videoUrl,
+            },
+          },
+        ],
+      });
+      setNotice(`“${label}” → ${trackId} @ ${start.toFixed(1)}s`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Could not place media');
+    }
+  }
+
   async function uploadAssetFiles(fileList: FileList | File[] | null | undefined) {
     const files = pickMediaFiles(fileList);
     if (!files.length) {
@@ -463,40 +539,10 @@ export default function Studio() {
               assets={blocks}
               scenes={scenes}
               selected={selected}
+              tracks={tracks}
               onNotice={setNotice}
-              onApplyAsset={(asset) => {
-                const target = scenes.find((s) => s.id === selected) || scenes[0];
-                if (!target) {
-                  setNotice('No scene to apply media to.');
-                  return;
-                }
-                setSceneImage(target.id, asset.image);
-                selectScene(target.id);
-                setNotice(`“${asset.description}” → ${target.title}.`);
-              }}
-              onReplaceMedia={async (media) => {
-                const target = scenes.find((s) => s.id === selected) || scenes[0];
-                if (!target) {
-                  setNotice('No scene to apply media to.');
-                  return;
-                }
-                try {
-                  const result = await applySceneMedia({
-                    sceneId: target.id,
-                    imageUrl: media.imageUrl,
-                    videoUrl: media.videoUrl,
-                    label: media.fileName,
-                    durationHint: media.durationHint,
-                  });
-                  if (result.source) {
-                    setBlocks((prev) => mergeAssetLibrary(prev, [result.source, ...readLocalSources()]));
-                    setBlocksTick((n) => n + 1);
-                  }
-                  setNotice(`Dropped onto ${target.title}.`);
-                } catch (err) {
-                  setNotice(err instanceof Error ? err.message : 'Drop failed');
-                }
-              }}
+              onApplyAsset={placeAssetOnTrack}
+              onPlaceMedia={placeMediaOnTrack}
             />
           </>
         )}

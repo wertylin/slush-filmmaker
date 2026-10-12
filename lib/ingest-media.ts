@@ -16,6 +16,7 @@ export type SlushAssetPayload = {
   description: string;
   duration?: number;
   key?: string;
+  video?: string;
 };
 
 export function parseSlushAssetDrag(dt: DataTransfer): SlushAssetPayload | null {
@@ -29,6 +30,7 @@ export function parseSlushAssetDrag(dt: DataTransfer): SlushAssetPayload | null 
       description: typeof parsed.description === 'string' ? parsed.description : 'Asset',
       duration: typeof parsed.duration === 'number' ? parsed.duration : undefined,
       key: typeof parsed.key === 'string' ? parsed.key : undefined,
+      video: typeof parsed.video === 'string' ? parsed.video : undefined,
     };
   } catch {
     return null;

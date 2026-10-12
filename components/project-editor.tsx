@@ -30,7 +30,13 @@ import {
   Wand2,
 } from 'lucide-react';
 import type { Scene } from '@/components/studio-actions';
-import type { TimelineTrack } from '@/components/timeline';
+import {
+  clipAtPlayhead,
+  isMediaTrackId,
+  type MediaTrackId,
+  type TimelineTrack,
+  type TrackId,
+} from '@/components/timeline';
 import type { Block } from '@/lib/blocks';
 import { downloadBlob, exportFilmVideo } from '@/lib/export-video';
 import {
@@ -42,6 +48,8 @@ import {
   type IngestedMedia,
   type SlushAssetPayload,
 } from '@/lib/ingest-media';
+
+export type PlaceTarget = { trackId: MediaTrackId; start?: number };
 
 type InspectorTab = 'Scene' | 'Clip' | 'Style';
 
@@ -125,26 +133,28 @@ export function EditorClipsPanel({
   assets,
   scenes,
   selected,
+  tracks,
   onApplyAsset,
-  onReplaceMedia,
+  onPlaceMedia,
   onNotice,
 }: {
   assets: Block[];
   scenes: Scene[];
   selected: string;
-  onApplyAsset?: (asset: SlushAssetPayload) => void;
-  onReplaceMedia?: (media: IngestedMedia) => void | Promise<void>;
+  tracks?: TimelineTrack[];
+  onApplyAsset?: (asset: SlushAssetPayload, target?: PlaceTarget) => void;
+  onPlaceMedia?: (media: IngestedMedia, target?: PlaceTarget) => void | Promise<void>;
   onNotice?: (text: string) => void;
 }) {
   const [query, setQuery] = useState('');
   const [uploadBusy, setUploadBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const { dragging, dropHandlers } = useMediaDropZone(
-    onReplaceMedia
+    onPlaceMedia
       ? async (media) => {
           setUploadBusy(true);
           try {
-            await onReplaceMedia(media);
+            await onPlaceMedia(media, { trackId: 'broll' });
           } finally {
             setUploadBusy(false);
           }
@@ -152,8 +162,6 @@ export function EditorClipsPanel({
       : undefined,
     onNotice,
   );
-
-  const selectedScene = scenes.find((s) => s.id === selected) || scenes[0];
 
   const items = useMemo(() => {
     const library =
@@ -168,9 +176,16 @@ export function EditorClipsPanel({
             duration: s.duration,
             sortOrder: 0,
           }));
+    const onTimeline = new Set<string>();
+    for (const t of tracks || []) {
+      for (const c of t.clips) {
+        if (c.image) onTimeline.add(c.image);
+      }
+    }
+    const selectedScene = scenes.find((s) => s.id === selected) || scenes[0];
     const q = query.trim().toLowerCase();
     return (q ? library.filter((b) => b.description.toLowerCase().includes(q)) : library).map((b) => {
-      const inUse = scenes.some((s) => s.image === b.image);
+      const layered = onTimeline.has(b.image);
       const onSelected = selectedScene?.image === b.image;
       return {
         id: b.id || b.key,
@@ -178,9 +193,8 @@ export function EditorClipsPanel({
         title: b.description,
         image: b.image,
         duration: formatTime(b.duration || 6),
-        meta: inUse ? (onSelected ? 'on selected scene' : 'on timeline') : 'library',
-        inUse,
-        onSelected,
+        meta: layered ? 'on timeline' : onSelected ? 'scene still' : 'library',
+        layered,
         payload: {
           image: b.image,
           description: b.description,
@@ -189,7 +203,7 @@ export function EditorClipsPanel({
         } satisfies SlushAssetPayload,
       };
     });
-  }, [assets, scenes, query, selectedScene?.image]);
+  }, [assets, scenes, query, selected, tracks]);
 
   return (
     <div className={`editor-clips ${dragging ? 'is-drop-target' : ''}`} {...dropHandlers}>
@@ -202,7 +216,7 @@ export function EditorClipsPanel({
         <button
           type="button"
           className="editor-clips-upload"
-          disabled={uploadBusy || !onReplaceMedia}
+          disabled={uploadBusy || !onPlaceMedia}
           onClick={() => fileRef.current?.click()}
           aria-label="Upload asset"
         >
@@ -217,10 +231,10 @@ export function EditorClipsPanel({
         onChange={(e) => {
           const file = pickMediaFile(e.target.files);
           e.target.value = '';
-          if (!file || !onReplaceMedia) return;
+          if (!file || !onPlaceMedia) return;
           setUploadBusy(true);
           void ingestMediaFile(file)
-            .then((media) => onReplaceMedia(media))
+            .then((media) => onPlaceMedia(media, { trackId: 'broll' }))
             .catch((err) => onNotice?.(err instanceof Error ? err.message : 'Upload failed'))
             .finally(() => setUploadBusy(false));
         }}
@@ -234,7 +248,7 @@ export function EditorClipsPanel({
           aria-label="Search assets"
         />
       </div>
-      {dragging ? <div className="editor-clips-drop-hint">Drop onto selected scene</div> : null}
+      {dragging ? <div className="editor-clips-drop-hint">Drop to add on B-roll</div> : null}
       <div className="editor-clips-list">
         {items.length === 0 ? (
           <div className="editor-clips-empty">
@@ -246,15 +260,15 @@ export function EditorClipsPanel({
               key={item.id}
               type="button"
               draggable
-              className={`editor-clip-row ${item.onSelected ? 'active' : ''}`}
-              title="Drag onto preview or timeline scene"
+              className={`editor-clip-row ${item.layered ? 'active' : ''}`}
+              title="Click → B-roll · drag onto Founder / Product / B-roll"
               onDragStart={(e) => {
                 const raw = JSON.stringify(item.payload);
                 e.dataTransfer.setData(SLUSH_ASSET_MIME, raw);
                 e.dataTransfer.setData('text/plain', raw);
                 e.dataTransfer.effectAllowed = 'copy';
               }}
-              onClick={() => onApplyAsset?.(item.payload)}
+              onClick={() => onApplyAsset?.(item.payload, { trackId: 'broll' })}
             >
               <span className="editor-clip-thumb">
                 {item.image ? <img src={item.image} alt="" draggable={false} /> : <Film size={16} />}
@@ -378,6 +392,7 @@ export function ProjectEditor({
   onNotice,
   onReplaceMedia,
   onApplyAsset,
+  onPlaceMedia,
 }: {
   project: string;
   scenes: Scene[];
@@ -389,24 +404,33 @@ export function ProjectEditor({
   onProjectChange: (name: string) => void;
   onTimelineOps?: (ops: Array<Record<string, unknown>>, plan: string) => void;
   onNotice?: (text: string) => void;
+  /** Replace shot button — writes into the selected scene still */
   onReplaceMedia?: (media: IngestedMedia) => void | Promise<void>;
-  onApplyAsset?: (asset: SlushAssetPayload, sceneId?: string) => void;
+  /** Place library asset as a layered clip (CapCut-style) */
+  onApplyAsset?: (asset: SlushAssetPayload, target?: PlaceTarget) => void;
+  /** File drop → library + layered clip */
+  onPlaceMedia?: (media: IngestedMedia, target?: PlaceTarget) => void | Promise<void>;
 }) {
   const [playing, setPlaying] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportPct, setExportPct] = useState(0);
   const [ingestBusy, setIngestBusy] = useState(false);
-  const [assetDropScene, setAssetDropScene] = useState<string | null>(null);
+  const [laneDropTrack, setLaneDropTrack] = useState<MediaTrackId | null>(null);
+  const [selectedClip, setSelectedClip] = useState<{ trackId: TrackId; clipId: string } | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const overlayVideoRef = useRef<HTMLVideoElement>(null);
+
+  const placeOnTrack = (trackId: MediaTrackId, start?: number) => ({ trackId, start: start ?? playhead });
+
   const { dragging, dropHandlers } = useMediaDropZone(
-    onReplaceMedia
+    onPlaceMedia
       ? async (media) => {
           setIngestBusy(true);
           try {
-            await onReplaceMedia(media);
+            await onPlaceMedia(media, placeOnTrack('broll'));
           } finally {
             setIngestBusy(false);
           }
@@ -415,31 +439,49 @@ export function ProjectEditor({
     onNotice,
     onApplyAsset
       ? (asset) => {
-          onApplyAsset(asset);
+          onApplyAsset(asset, placeOnTrack('broll'));
         }
       : undefined,
   );
 
-  function onSceneAssetDragOver(e: DragEvent, sceneId: string) {
-    if (!onApplyAsset || !isSlushAssetDrag(e.dataTransfer)) return;
+  function onLaneDragOver(e: DragEvent, trackId: TrackId) {
+    if (!isMediaTrackId(trackId)) return;
+    if (!onApplyAsset && !onPlaceMedia) return;
+    if (!isSlushAssetDrag(e.dataTransfer) && !Array.from(e.dataTransfer.types).includes('Files')) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'copy';
-    setAssetDropScene(sceneId);
+    setLaneDropTrack(trackId);
   }
 
-  function onSceneAssetDrop(e: DragEvent, sceneId: string) {
-    if (!onApplyAsset) return;
-    if (!isSlushAssetDrag(e.dataTransfer)) return;
+  function onLaneDrop(e: DragEvent, trackId: TrackId) {
+    if (!isMediaTrackId(trackId)) return;
     e.preventDefault();
     e.stopPropagation();
-    setAssetDropScene(null);
-    const asset = parseSlushAssetDrag(e.dataTransfer);
-    if (!asset) {
-      onNotice?.('Could not read asset');
+    setLaneDropTrack(null);
+    const target = placeOnTrack(trackId);
+
+    if (onApplyAsset && isSlushAssetDrag(e.dataTransfer)) {
+      const asset = parseSlushAssetDrag(e.dataTransfer);
+      if (!asset) {
+        onNotice?.('Could not read asset');
+        return;
+      }
+      onApplyAsset(asset, target);
       return;
     }
-    onApplyAsset(asset, sceneId);
+
+    if (!onPlaceMedia) return;
+    const file = pickMediaFile(e.dataTransfer.files);
+    if (!file) {
+      onNotice?.('Drop an image or video');
+      return;
+    }
+    setIngestBusy(true);
+    void ingestMediaFile(file)
+      .then((media) => onPlaceMedia(media, target))
+      .catch((err) => onNotice?.(err instanceof Error ? err.message : 'Drop failed'))
+      .finally(() => setIngestBusy(false));
   }
 
   useEffect(() => {
@@ -451,24 +493,68 @@ export function ProjectEditor({
     return () => document.removeEventListener('mousedown', onDoc);
   }, [exportOpen]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === 'INPUT' ||
+          t.tagName === 'TEXTAREA' ||
+          t.tagName === 'SELECT' ||
+          t.isContentEditable)
+      ) {
+        return;
+      }
+      if (!onTimelineOps) return;
+      if (selectedClip) {
+        e.preventDefault();
+        onTimelineOps(
+          [{ op: 'delete_clip', trackId: selectedClip.trackId, clipId: selectedClip.clipId }],
+          'Delete selected clip',
+        );
+        setSelectedClip(null);
+        return;
+      }
+      const current = scenes.find((s) => s.id === selected) || scenes[0];
+      if (!current || scenes.length <= 1) return;
+      e.preventDefault();
+      onTimelineOps([{ op: 'delete_scene', sceneId: current.id }], 'Delete selected scene');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onTimelineOps, scenes, selected, selectedClip]);
+
   const total = Math.max(1, scenes.reduce((n, s) => n + s.duration, 0));
   const scene = scenes.find((s) => s.id === selected) || scenes[0];
   const sceneIndex = scene ? Math.max(0, scenes.findIndex((s) => s.id === scene.id)) : 0;
   const playheadRatio = Math.min(1, Math.max(0, playhead / total));
-  const frameImage = scene?.image || '';
-  const frameVideo = scene?.video || '';
-  const frameTitle = scene?.title || 'No scene';
+  const overlay = clipAtPlayhead(tracks, playhead);
+  const frameImage = overlay?.image || scene?.image || '';
+  const frameVideo = overlay?.video || (!overlay ? scene?.video : undefined) || '';
+  const frameTitle = overlay?.label || scene?.title || 'No scene';
   const frameCaption = scene?.caption || 'Pick a template to load scenes.';
 
   useEffect(() => {
     const el = videoRef.current;
-    if (!el || !frameVideo) return;
+    if (!el || !frameVideo || overlay?.video) return;
     if (playing) {
       void el.play().catch(() => {});
     } else {
       el.pause();
     }
-  }, [playing, frameVideo, selected]);
+  }, [playing, frameVideo, selected, overlay?.video]);
+
+  useEffect(() => {
+    const el = overlayVideoRef.current;
+    if (!el || !overlay?.video) return;
+    if (playing) {
+      void el.play().catch(() => {});
+    } else {
+      el.pause();
+    }
+  }, [playing, overlay?.video, overlay?.id]);
 
   const sceneBlocks = useMemo(() => {
     let t = 0;
@@ -582,7 +668,18 @@ export function ProjectEditor({
             className={`nle-frame ${dragging ? 'is-drop-target' : ''}${ingestBusy ? ' is-ingest' : ''}`}
             {...dropHandlers}
           >
-            {frameVideo ? (
+            {overlay?.video ? (
+              <video
+                ref={overlayVideoRef}
+                key={overlay.video}
+                src={overlay.video}
+                poster={overlay.image || undefined}
+                muted
+                playsInline
+                loop
+                preload="metadata"
+              />
+            ) : frameVideo ? (
               <video
                 ref={videoRef}
                 key={frameVideo}
@@ -600,16 +697,19 @@ export function ProjectEditor({
             )}
             <div className="nle-frame-shade" />
             <div className="nle-overlay-copy">
-              {frameCaption.split('.').filter(Boolean)[0] || frameTitle}.
+              {overlay
+                ? overlay.label
+                : frameCaption.split('.').filter(Boolean)[0] || frameTitle}
+              {overlay ? '' : '.'}
             </div>
             <span className="nle-scene-chip">
-              SCENE {String(sceneIndex + 1).padStart(2, '0')} · {frameTitle.toUpperCase()}
+              {overlay
+                ? `${overlay.trackId.toUpperCase()} · ${frameTitle.toUpperCase()}`
+                : `SCENE ${String(sceneIndex + 1).padStart(2, '0')} · ${frameTitle.toUpperCase()}`}
             </span>
             {dragging || ingestBusy ? (
               <div className="nle-drop-overlay">
-                {ingestBusy
-                  ? 'Reading media…'
-                  : 'Drop asset or file to replace this shot'}
+                {ingestBusy ? 'Reading media…' : 'Drop onto B-roll at playhead'}
               </div>
             ) : null}
           </div>
@@ -710,8 +810,16 @@ export function ProjectEditor({
             </button>
             <button
               type="button"
-              disabled={!scene}
+              disabled={!selectedClip && !scene}
               onClick={() => {
+                if (selectedClip) {
+                  onTimelineOps?.(
+                    [{ op: 'delete_clip', trackId: selectedClip.trackId, clipId: selectedClip.clipId }],
+                    'Delete selected clip',
+                  );
+                  setSelectedClip(null);
+                  return;
+                }
                 if (!scene) return;
                 onTimelineOps?.([{ op: 'delete_scene', sceneId: scene.id }], 'Delete selected scene');
               }}
@@ -749,43 +857,80 @@ export function ProjectEditor({
             ))}
           </div>
           <div className="nle-tracks">
-            {tracks.map((track) => (
-              <div className="nle-track" key={track.id}>
-                <div className="nle-track-label">{track.label}</div>
-                <div className="nle-track-lane">
-                  {track.id === 'scenes'
-                    ? sceneBlocks.map((b) => (
-                        <button
-                          key={b.id}
-                          type="button"
-                          className={`nle-block ${selected === b.id ? 'active' : ''}${assetDropScene === b.id ? ' is-drop-target' : ''}`}
-                          style={{ left: `${b.left}%`, width: `${b.width}%`, background: track.color }}
-                          onClick={() => onSelect(b.id)}
-                          onDragOver={(e) => onSceneAssetDragOver(e, b.id)}
-                          onDragLeave={() => setAssetDropScene((cur) => (cur === b.id ? null : cur))}
-                          onDrop={(e) => onSceneAssetDrop(e, b.id)}
-                        >
-                          {b.title}
-                        </button>
-                      ))
-                    : track.clips.map((clip) => (
-                        <div
-                          key={clip.id}
-                          className="nle-block soft"
-                          style={{
-                            left: `${(clip.start / total) * 100}%`,
-                            width: `${Math.max(1.2, (clip.duration / total) * 100)}%`,
-                            background: track.color,
-                          }}
-                          title={clip.label}
-                        >
-                          {clip.label}
-                        </div>
-                      ))}
-                  <div className="nle-playhead" style={{ left: `${playheadRatio * 100}%` }} />
+            {tracks.map((track) => {
+              const mediaLane = isMediaTrackId(track.id);
+              return (
+                <div className="nle-track" key={track.id}>
+                  <div className="nle-track-label">{track.label}</div>
+                  <div
+                    className={`nle-track-lane${laneDropTrack === track.id ? ' is-drop-target' : ''}${mediaLane ? ' accepts-media' : ''}`}
+                    onDragOver={(e) => onLaneDragOver(e, track.id)}
+                    onDragLeave={() =>
+                      setLaneDropTrack((cur) => (cur === track.id ? null : cur))
+                    }
+                    onDrop={(e) => onLaneDrop(e, track.id)}
+                  >
+                    {track.id === 'scenes'
+                      ? sceneBlocks.map((b) => (
+                          <button
+                            key={b.id}
+                            type="button"
+                            className={`nle-block ${selected === b.id && !selectedClip ? 'active' : ''}`}
+                            style={{ left: `${b.left}%`, width: `${b.width}%`, background: track.color }}
+                            onClick={() => {
+                              setSelectedClip(null);
+                              onSelect(b.id);
+                            }}
+                          >
+                            {b.title}
+                          </button>
+                        ))
+                      : track.clips.map((clip) => {
+                          const active =
+                            selectedClip?.trackId === track.id && selectedClip.clipId === clip.id;
+                          const media = mediaLane && !!clip.image;
+                          return media ? (
+                            <button
+                              key={clip.id}
+                              type="button"
+                              className={`nle-block media ${active ? 'active' : ''}`}
+                              style={{
+                                left: `${(clip.start / total) * 100}%`,
+                                width: `${Math.max(1.2, (clip.duration / total) * 100)}%`,
+                                backgroundImage: clip.image ? `url(${clip.image})` : undefined,
+                                backgroundColor: track.color,
+                              }}
+                              title={clip.label}
+                              onClick={() => {
+                                setSelectedClip({ trackId: track.id, clipId: clip.id });
+                                onSeek(clip.start + Math.min(0.2, clip.duration / 2));
+                              }}
+                            >
+                              <span>{clip.label}</span>
+                            </button>
+                          ) : (
+                            <div
+                              key={clip.id}
+                              className={`nle-block soft ${active ? 'active' : ''}`}
+                              style={{
+                                left: `${(clip.start / total) * 100}%`,
+                                width: `${Math.max(1.2, (clip.duration / total) * 100)}%`,
+                                background: track.color,
+                              }}
+                              title={clip.label}
+                            >
+                              {clip.label}
+                            </div>
+                          );
+                        })}
+                    {mediaLane && track.clips.length === 0 ? (
+                      <span className="nle-lane-hint">Drop media here</span>
+                    ) : null}
+                    <div className="nle-playhead" style={{ left: `${playheadRatio * 100}%` }} />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

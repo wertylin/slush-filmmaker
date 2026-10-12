@@ -21,7 +21,34 @@ export type TimelineClip = {
   start: number;
   duration: number;
   sceneId?: string;
+  /** Still / poster shown on the timeline + preview overlay */
+  image?: string;
+  /** Optional video URL for preview playback */
+  video?: string;
 };
+
+/** Tracks that accept dragged media as CapCut-style layered clips. */
+export const MEDIA_TRACK_IDS = ['founder', 'product', 'broll'] as const;
+export type MediaTrackId = (typeof MEDIA_TRACK_IDS)[number];
+
+export function isMediaTrackId(id: string): id is MediaTrackId {
+  return (MEDIA_TRACK_IDS as readonly string[]).includes(id);
+}
+
+/** Topmost visual clip under playhead (later MEDIA_TRACK_IDS win — broll over product over founder). */
+export function clipAtPlayhead(tracks: TimelineTrack[], t: number): (TimelineClip & { trackId: TrackId }) | null {
+  let hit: (TimelineClip & { trackId: TrackId }) | null = null;
+  for (const trackId of MEDIA_TRACK_IDS) {
+    const track = tracks.find((x) => x.id === trackId);
+    if (!track) continue;
+    for (const c of track.clips) {
+      if (t >= c.start && t < c.start + c.duration && (c.image || c.video)) {
+        hit = { ...c, trackId };
+      }
+    }
+  }
+  return hit;
+}
 
 export type TimelineTrack = {
   id: TrackId;
@@ -49,7 +76,15 @@ export type TimelineOp =
   | {
       op: 'upsert_clip';
       trackId: TrackId;
-      clip: { id?: string; label: string; start: number; duration: number; sceneId?: string };
+      clip: {
+        id?: string;
+        label: string;
+        start: number;
+        duration: number;
+        sceneId?: string;
+        image?: string;
+        video?: string;
+      };
     }
   | { op: 'delete_clip'; trackId: TrackId; clipId: string }
   | {
@@ -351,6 +386,8 @@ export function applyTimelineOps(
             start: clampTime(raw.clip.start, Math.max(total, 0.001)),
             duration: Math.max(0.5, Math.min(120, Number(raw.clip.duration) || 1)),
             sceneId: raw.clip.sceneId ? String(raw.clip.sceneId) : undefined,
+            image: raw.clip.image ? String(raw.clip.image) : undefined,
+            video: raw.clip.video ? String(raw.clip.video) : undefined,
           };
           const idx = track.clips.findIndex((c) => c.id === clip.id);
           const nextClips =
