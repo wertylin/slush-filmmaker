@@ -164,18 +164,7 @@ export function EditorClipsPanel({
   );
 
   const items = useMemo(() => {
-    const library =
-      assets.length > 0
-        ? assets
-        : scenes.map((s, i) => ({
-            id: s.id,
-            key: s.id,
-            image: s.image,
-            description: s.title || `Scene ${i + 1}`,
-            caption: s.caption,
-            duration: s.duration,
-            sortOrder: 0,
-          }));
+    const library = assets;
     const onTimeline = new Set<string>();
     for (const t of tracks || []) {
       for (const c of t.clips) {

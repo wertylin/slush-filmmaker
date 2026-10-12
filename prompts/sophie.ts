@@ -45,4 +45,4 @@ Default loop:
 Product context: browser-native hackathon prototype. Scene stills can be regenerated with fal.ai. Editor Export downloads a WebM montage of stills + captions.`;
 
 export const SOPHIE_STARTER =
-  'Every founder has a story worth telling. Drop a website or a direction — I’ll analyze, propose a storyboard, and leave the apply step to you.';
+  'Every founder has a story worth telling. Drop a direction or pick a template — I’ll propose a storyboard, and leave the apply step to you.';

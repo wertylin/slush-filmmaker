@@ -35,11 +35,23 @@ export function writeLocalSources(blocks: Block[]) {
   }
 }
 
-/** Merge remote + local; generated sources win on duplicate image/key. */
+/** Template seed stills (`scene-1`…) — not library sources. */
+export function isSeedSceneBlock(b: Pick<Block, 'key' | 'id'>) {
+  const k = String(b.key || b.id || '');
+  return /^scene-\d+$/i.test(k);
+}
+
+/** Merge remote + local; generated sources win on duplicate image/key. Drops template seed stills. */
 export function mergeAssetLibrary(remote: Block[], local: Block[]): Block[] {
   const byKey = new Map<string, Block>();
-  for (const b of remote) byKey.set(b.key || b.id, b);
-  for (const b of local) byKey.set(b.key || b.id, b);
+  for (const b of remote) {
+    if (isSeedSceneBlock(b)) continue;
+    byKey.set(b.key || b.id, b);
+  }
+  for (const b of local) {
+    if (isSeedSceneBlock(b)) continue;
+    byKey.set(b.key || b.id, b);
+  }
   return [...byKey.values()].sort((a, b) => b.sortOrder - a.sortOrder || a.description.localeCompare(b.description));
 }
 
@@ -47,7 +59,8 @@ export async function fetchBlocks(): Promise<Block[]> {
   const res = await fetch('/api/blocks');
   if (!res.ok) return [];
   const data = (await res.json()) as { blocks: Block[] };
-  return Array.isArray(data.blocks) ? data.blocks : [];
+  const rows = Array.isArray(data.blocks) ? data.blocks : [];
+  return rows.filter((b) => !isSeedSceneBlock(b));
 }
 
 /** Map DB blocks → Studio Scene shape (fallback ids if key missing). */

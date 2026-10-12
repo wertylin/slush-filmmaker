@@ -9,7 +9,6 @@ import {
   Image as ImageIcon,
   BookOpen,
   Settings2,
-  Globe,
   Sparkles,
   Play,
   Check,
@@ -19,7 +18,6 @@ import {
   X,
   PanelLeftClose,
   PanelRightClose,
-  Monitor,
   KeyRound,
   SlidersHorizontal,
   ChevronDown,
@@ -27,9 +25,8 @@ import {
   Upload,
 } from 'lucide-react';
 import { Logo, photos, TemplateCards, Preview } from '@/components/shared';
-import { getCachedTemplates } from '@/lib/templates';
-import { useWebMCP, callWebMCPTool } from '@/components/webmcp';
-import { getFalKey, getOpenAIKey, setFalKey, setOpenAIKey, hasFalKey, hasOpenAIKey } from '@/components/keys';
+import { useWebMCP } from '@/components/webmcp';
+import { getFalKey, getOpenAIKey, setFalKey, setOpenAIKey, hasFalKey } from '@/components/keys';
 import { chatWithSophie } from '@/components/sophie-chat';
 import { SOPHIE_STARTER } from '@/prompts/sophie';
 import { useStudioProject, type StudioTab } from '@/components/studio-actions';
@@ -70,12 +67,10 @@ export default function Studio() {
     setPlayhead,
     tracks,
     template,
-    website,
     setWebsite,
     project,
     setProject,
     activity,
-    brief,
     pendingProposal,
     reviewOpen,
     setReviewOpen,
@@ -114,7 +109,6 @@ export default function Studio() {
   const [falDraft, setFalDraft] = useState('');
   const [falConnected, setFalConnected] = useState(false);
   const [chatBusy, setChatBusy] = useState(false);
-  const [analyzeBusy, setAnalyzeBusy] = useState(false);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [blocksTick, setBlocksTick] = useState(0);
   const [uploadBusy, setUploadBusy] = useState(false);
@@ -184,10 +178,6 @@ export default function Studio() {
   }, [setReviewOpen]);
 
   const scene = scenes.find((s) => s.id === selected) || scenes[0];
-  const sceneImage = scene?.image || photos.earth;
-  const sceneTitle = scene?.title || 'No scene yet';
-  const sceneCaption = scene?.caption || '';
-  const sceneDuration = scene?.duration ?? 0;
 
   async function onChooseTemplate(id?: string) {
     setPreview(null);
@@ -253,38 +243,6 @@ export default function Studio() {
     },
     agentified,
   );
-
-  async function startWebsite() {
-    if (!hasOpenAIKey() && !openaiKey.trim()) {
-      setSettings(true);
-      setNotice('Connect your OpenAI key to analyze a website.');
-      return;
-    }
-    try {
-      const url = new URL(website.startsWith('http') ? website : `https://${website}`);
-      if (!url.hostname.includes('.')) throw new Error('invalid');
-      setAnalyzeBusy(true);
-      setWebsite(url.href);
-      setProject(url.hostname.replace(/^www\./, '') + ' — Founder film');
-      const result = (await callWebMCPTool('analyze_website', { url: url.href })) as {
-        brief?: { product?: string };
-      };
-      if (result?.brief?.product) {
-        setNotice(`Brief ready: ${result.brief.product}`);
-      }
-      setTab('Overview');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Analysis failed';
-      if (msg === 'byok_required') {
-        setSettings(true);
-        setNotice('Connect your OpenAI key to analyze a website.');
-      } else {
-        setNotice(msg.includes('valid') ? 'Enter a valid website, for example yourstartup.com.' : msg);
-      }
-    } finally {
-      setAnalyzeBusy(false);
-    }
-  }
 
   function placeAssetOnTrack(asset: SlushAssetPayload, target?: PlaceTarget) {
     const trackId = target?.trackId || 'broll';
@@ -614,128 +572,25 @@ export default function Studio() {
                   Make something worth watching, together with AI.
                 </p>
                 <div className="studio-hero-actions">
-                  <button className="button primary" onClick={() => document.getElementById('website')?.focus()}>
-                    <Sparkles size={17} /> Start with your website <ArrowUpRight size={17} />
-                  </button>
-                  <button className="button outline" onClick={() => setPreview(template)}>
+                  <button className="button primary" onClick={() => setPreview(template)}>
                     <Play size={15} /> Explore template
                   </button>
-                </div>
-              </section>
-
-              <section className="editor-panel">
-                <div className="editor-toolbar">
-                  <span className="traffic-lights">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                  <div className="url-input">
-                    <Globe size={16} />
-                    <input
-                      id="website"
-                      value={website}
-                      onChange={(e) => setWebsite(e.target.value)}
-                      placeholder="https://yourstartup.com"
-                      onKeyDown={(e) => e.key === 'Enter' && void startWebsite()}
-                      disabled={analyzeBusy}
-                    />
-                  </div>
-                  <button className="button small outline-red" onClick={() => void startWebsite()} disabled={analyzeBusy}>
-                    {analyzeBusy ? 'Analyzing…' : 'Use website'} <ArrowRightIcon />
+                  <button className="button outline" onClick={() => setRightOpen(true)}>
+                    <Sparkles size={17} /> Talk to Sophie
                   </button>
-                </div>
-                <div className="editor-title">
-                  <div>
-                    <span className="eyebrow">STORYBOARD / {getCachedTemplates().find((t) => t.id === template)?.category || 'STORY'}</span>
-                    <input aria-label="Project name" value={project} onChange={(e) => setProject(e.target.value)} />
-                  </div>
-                  <span className="demo-badge">{brief ? 'BRIEF READY' : 'EDITABLE DEMO'}</span>
-                </div>
-                <div className="scene-preview">
-                  <img src={sceneImage} alt={sceneTitle} />
-                  <div className="scene-gradient" />
-                  <span className="frame-label">
-                    SCENE{' '}
-                    {String((scene ? scenes.indexOf(scene) : -1) + 1).padStart(2, '0')} /{' '}
-                    {String(scenes.length).padStart(2, '0')}
-                  </span>
-                  <div className="scene-caption">{sceneCaption}</div>
-                  <div className="preview-controls">
-                    <span>
-                      <Monitor size={15} /> 16:9 · Storyboard preview
-                    </span>
-                    <span>{sceneDuration}s</span>
-                  </div>
-                </div>
-                <div className="scene-strip">
-                  {scenes.map((s, i) => (
-                    <button className={selected === s.id ? 'selected' : ''} key={s.id} onClick={() => setSelected(s.id)}>
-                      <img src={s.image} alt={s.title} />
-                      <span>
-                        {String(i + 1).padStart(2, '0')} · {s.duration}s
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <div className="scene-edit">
-                  <label>
-                    SCENE CAPTION
-                    <input
-                      value={sceneCaption}
-                      disabled={!scene}
-                      onChange={(e) => {
-                        if (!scene) return;
-                        setScenes((all) => all.map((s) => (s.id === scene.id ? { ...s, caption: e.target.value } : s)));
-                      }}
-                    />
-                  </label>
-                  <label className="duration-edit">
-                    SECONDS
-                    <input
-                      type="number"
-                      min="1"
-                      max="60"
-                      value={sceneDuration || ''}
-                      disabled={!scene}
-                      onChange={(e) => {
-                        if (!scene) return;
-                        setScenes((all) =>
-                          all.map((s) =>
-                            s.id === scene.id
-                              ? { ...s, duration: Math.max(1, Math.min(60, Number(e.target.value) || 1)) }
-                              : s,
-                          ),
-                        );
-                      }}
-                    />
-                  </label>
-                </div>
-                <div className="editor-footer">
-                  <span>
-                    <span className="status-dot" /> Saved on this device
-                  </span>
-                  <span>
-                    {scenes.length} scenes · {scenes.reduce((n, s) => n + s.duration, 0)} seconds
-                    {pendingProposal ? ' · proposal pending' : ''}
-                  </span>
                 </div>
               </section>
 
               <div className="onboarding-steps">
                 {[
-                  { title: 'Bring your story', text: 'A website, an idea, a spark.', icon: Globe },
+                  { title: 'Bring your story', text: 'An idea, a spark, a direction.', icon: Clapperboard },
                   { title: 'Choose your direction', text: 'A template that feels like you.', icon: Film },
                   { title: 'Create together', text: 'Your vision, an AI creative crew.', icon: Sparkles },
                 ].map((s, i) => (
                   <button
                     key={s.title}
                     onClick={() =>
-                      i === 0
-                        ? document.getElementById('website')?.focus()
-                        : i === 1
-                          ? setTab('Templates')
-                          : setRightOpen(true)
+                      i === 0 ? setRightOpen(true) : i === 1 ? setTab('Templates') : setRightOpen(true)
                     }
                   >
                     <span className="step-circle">{i + 1}</span>
@@ -787,19 +642,8 @@ export default function Studio() {
               onSeek={seekTimeline}
               onProjectChange={setProject}
               onNotice={setNotice}
-              onApplyAsset={(asset, sceneId) => {
-                const target =
-                  (sceneId ? scenes.find((s) => s.id === sceneId) : null) ||
-                  scenes.find((s) => s.id === selected) ||
-                  scenes[0];
-                if (!target) {
-                  setNotice('No scene to apply media to.');
-                  return;
-                }
-                setSceneImage(target.id, asset.image);
-                selectScene(target.id);
-                setNotice(`“${asset.description}” → ${target.title}.`);
-              }}
+              onApplyAsset={placeAssetOnTrack}
+              onPlaceMedia={placeMediaOnTrack}
               onReplaceMedia={async (media) => {
                 const target = scenes.find((s) => s.id === selected) || scenes[0];
                 if (!target) {
@@ -885,18 +729,7 @@ export default function Studio() {
                     <em>Image or video</em>
                   </span>
                 </button>
-                {(blocks.length
-                  ? blocks
-                  : scenes.map((s) => ({
-                      id: s.id,
-                      key: s.id,
-                      image: s.image,
-                      description: s.title,
-                      caption: s.caption,
-                      duration: s.duration,
-                      sortOrder: 0,
-                    }))
-                ).map((b) => {
+                {blocks.map((b) => {
                   const inUse = scenes.some((s) => s.image === b.image);
                   const isGenerated = String(b.key || '').startsWith('source-');
                   return (
@@ -945,8 +778,7 @@ export default function Studio() {
               </p>
               <h3>03 — What’s live vs next</h3>
               <p>
-                Live: website brief → storyboard → stills (fal.ai) → Editor Export (WebM montage). Video gen / multi-track
-                mix is next.
+                Live: storyboard → stills (fal.ai) → Editor Export (WebM montage). Video gen / multi-track mix is next.
               </p>
             </section>
           )}
@@ -1234,8 +1066,4 @@ export default function Studio() {
       )}
     </div>
   );
-}
-
-function ArrowRightIcon() {
-  return <ArrowUpRight size={14} />;
 }
