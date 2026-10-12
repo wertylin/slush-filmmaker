@@ -100,9 +100,12 @@ export function totalDuration(scenes: Scene[]) {
   return scenes.reduce((n, s) => n + s.duration, 0);
 }
 
+/** Place A/V clips on the classic founder beats (by scene index). */
 export function buildInitialTracks(scenes: Scene[]): TimelineTrack[] {
-  const total = totalDuration(scenes);
-  const caps = sceneTimeline(scenes).map((s) => ({
+  const placed = sceneTimeline(scenes);
+  const total = Math.max(1, totalDuration(scenes));
+  const at = (i: number) => placed[i] || placed[placed.length - 1];
+  const caps = placed.map((s) => ({
     id: `cap-${s.id}`,
     label: 'CC',
     start: s.start,
@@ -110,22 +113,99 @@ export function buildInitialTracks(scenes: Scene[]): TimelineTrack[] {
     sceneId: s.id,
   }));
 
+  // Indices assume founder arc: 0 Hook · 1 Problem · 2 Founder · 3 Product · 4 Ask
+  const hook = at(0);
+  const problem = at(1);
+  const founder = at(2);
+  const product = at(3);
+  const ask = at(Math.min(4, placed.length - 1));
+
+  const defaults: Record<string, TimelineClip[]> = {
+    founder: [
+      {
+        id: 'clip-founder-acam',
+        label: 'Founder A-cam',
+        start: founder.start,
+        duration: founder.duration + Math.min(2, ask.duration * 0.25),
+        sceneId: founder.id,
+      },
+      {
+        id: 'clip-founder-close',
+        label: 'Founder close',
+        start: ask.start + ask.duration * 0.15,
+        duration: Math.max(3, ask.duration * 0.55),
+        sceneId: ask.id,
+      },
+    ],
+    product: [
+      {
+        id: 'clip-product-ui',
+        label: 'Product UI',
+        start: product.start + 0.4,
+        duration: Math.max(4, product.duration - 0.8),
+        sceneId: product.id,
+      },
+    ],
+    broll: [
+      {
+        id: 'clip-broll-world',
+        label: 'Broken world',
+        start: problem.start,
+        duration: problem.duration,
+        sceneId: problem.id,
+      },
+      {
+        id: 'clip-broll-crowd',
+        label: 'Stage / crowd',
+        start: ask.start,
+        duration: ask.duration,
+        sceneId: ask.id,
+      },
+    ],
+    titles: [
+      {
+        id: 'clip-title-open',
+        label: 'Open title',
+        start: hook.start,
+        duration: Math.min(hook.duration, 4),
+        sceneId: hook.id,
+      },
+      {
+        id: 'clip-title-end',
+        label: 'End card',
+        start: ask.start + Math.max(0, ask.duration - 4),
+        duration: Math.min(4, ask.duration),
+        sceneId: ask.id,
+      },
+    ],
+    vo: [
+      {
+        id: 'clip-vo-arc',
+        label: 'Founder VO',
+        start: Math.min(0.6, total * 0.02),
+        duration: Math.max(total - 1.2, 8),
+      },
+    ],
+    music: [{ id: 'clip-music-1', label: 'Underscore', start: 0, duration: total }],
+    sfx: [
+      {
+        id: 'clip-sfx-turn',
+        label: 'Turn hit',
+        start: Math.max(0, founder.start - 0.15),
+        duration: 1.2,
+      },
+      {
+        id: 'clip-sfx-resolve',
+        label: 'Resolve hit',
+        start: Math.max(0, ask.start - 0.1),
+        duration: 1.4,
+      },
+    ],
+  };
+
   return TRACK_DEFS.map((def) => {
-    if (def.id === 'scenes' || def.id === 'captions') {
-      return { ...def, clips: def.id === 'captions' ? caps : [] };
-    }
-    const defaults: Record<string, TimelineClip[]> = {
-      founder: [{ id: 'clip-founder-1', label: 'Founder A-cam', start: Math.min(2, total * 0.08), duration: Math.min(18, total * 0.55) }],
-      product: [{ id: 'clip-product-1', label: 'Product UI', start: Math.min(12, total * 0.38), duration: Math.min(9, total * 0.28) }],
-      broll: [
-        { id: 'clip-broll-1', label: 'City', start: Math.min(4, total * 0.12), duration: Math.min(6, total * 0.18) },
-        { id: 'clip-broll-2', label: 'Crowd', start: Math.min(20, total * 0.62), duration: Math.min(7, total * 0.22) },
-      ],
-      titles: [{ id: 'clip-title-1', label: 'Open title', start: 0, duration: Math.min(5, total * 0.16) }],
-      vo: [{ id: 'clip-vo-1', label: 'Founder VO', start: Math.min(1.5, total * 0.05), duration: Math.min(22, total * 0.7) }],
-      music: [{ id: 'clip-music-1', label: 'Underscore', start: 0, duration: Math.max(total, 1) }],
-      sfx: [{ id: 'clip-sfx-1', label: 'Hit', start: Math.min(15, total * 0.48), duration: 2 }],
-    };
+    if (def.id === 'scenes') return { ...def, clips: [] };
+    if (def.id === 'captions') return { ...def, clips: caps };
     return { ...def, clips: defaults[def.id] || [] };
   });
 }

@@ -33,7 +33,7 @@ import { chatWithSophie } from '@/components/sophie-chat';
 import { SOPHIE_STARTER } from '@/prompts/sophie';
 import { useStudioProject, type StudioTab } from '@/components/studio-actions';
 import { EditorClipsPanel, EditorInspector, ProjectEditor } from '@/components/project-editor';
-import { fetchBlocks, type Block } from '@/lib/blocks';
+import { fetchBlocks, mergeAssetLibrary, readLocalSources, type Block } from '@/lib/blocks';
 
 type ChatMsg = { id: string; role: 'user' | 'assistant' | 'system'; text: string };
 const tabs = [
@@ -72,6 +72,7 @@ export default function Studio() {
     pushActivity,
     selectScene,
     setSceneImage,
+    addGeneratedSource,
     chooseTemplate,
     getState,
     getTimeline,
@@ -101,6 +102,7 @@ export default function Studio() {
   const [chatBusy, setChatBusy] = useState(false);
   const [analyzeBusy, setAnalyzeBusy] = useState(false);
   const [blocks, setBlocks] = useState<Block[]>([]);
+  const [blocksTick, setBlocksTick] = useState(0);
 
   useEffect(() => {
     setKeyDraft(openaiKey || getOpenAIKey());
@@ -109,15 +111,20 @@ export default function Studio() {
   }, [openaiKey]);
 
   useEffect(() => {
+    setBlocks((prev) => mergeAssetLibrary(prev, readLocalSources()));
+  }, []);
+
+  useEffect(() => {
     if (tab !== 'Assets') return;
     let cancelled = false;
     void fetchBlocks().then((rows) => {
-      if (!cancelled) setBlocks(rows);
+      if (cancelled) return;
+      setBlocks(mergeAssetLibrary(rows, readLocalSources()));
     });
     return () => {
       cancelled = true;
     };
-  }, [tab, scenes]);
+  }, [tab, blocksTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -216,6 +223,15 @@ export default function Studio() {
       },
       newProject,
       setSceneImage,
+      addGeneratedSource: async (input) => {
+        const result = await addGeneratedSource(input);
+        if (result.source) {
+          setBlocks((prev) => mergeAssetLibrary(prev, [result.source, ...readLocalSources()]));
+        }
+        setBlocksTick((n) => n + 1);
+        setTab('Assets');
+        return result;
+      },
     },
     agentified,
   );
@@ -635,11 +651,11 @@ export default function Studio() {
           {tab === 'Assets' && (
             <section className="dashboard-section">
               <div className="eyebrow">YOUR VISUAL WORLD</div>
-              <h1>The building blocks.</h1>
+              <h1>Assets.</h1>
               <p>
                 {falConnected
-                  ? 'Scene stills — ask Sophie to generate, or tap a card to edit.'
-                  : 'Demo imagery for now. Connect fal.ai to generate stills with Sophie.'}
+                  ? 'Sophie adds a new card for every still. Tap a card to put it on the selected scene — generate never overwrites a slot.'
+                  : 'Seed stills for now. Connect fal.ai so Sophie can grow this library.'}
               </p>
               <div className="asset-grid">
                 {(blocks.length
@@ -653,21 +669,35 @@ export default function Studio() {
                       duration: s.duration,
                       sortOrder: 0,
                     }))
-                ).map((b) => (
-                  <button
-                    key={b.id}
-                    onClick={() => {
-                      const match = scenes.find((s) => s.title === b.description || s.id === b.key);
-                      if (match) selectScene(match.id);
-                      setTab('Editor');
-                    }}
-                  >
-                    <img src={b.image} alt={b.description} />
-                    <span>
-                      {b.description} <ArrowUpRight size={16} />
-                    </span>
-                  </button>
-                ))}
+                ).map((b) => {
+                  const inUse = scenes.some((s) => s.image === b.image);
+                  const isGenerated = String(b.key || '').startsWith('source-');
+                  return (
+                    <button
+                      key={b.id || b.key}
+                      type="button"
+                      onClick={() => {
+                        const target = scenes.find((s) => s.id === selected) || scenes[0];
+                        if (target) {
+                          setSceneImage(target.id, b.image);
+                          selectScene(target.id);
+                          setNotice(`Source dropped on ${target.title}.`);
+                        }
+                        setTab('Editor');
+                      }}
+                    >
+                      <img src={b.image} alt={b.description} />
+                      <span>
+                        <span className="asset-meta">
+                          {b.description}
+                          {isGenerated ? <em className="asset-tag">new</em> : null}
+                          {inUse ? <em className="asset-tag on">on timeline</em> : null}
+                        </span>
+                        <ArrowUpRight size={16} />
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </section>
           )}

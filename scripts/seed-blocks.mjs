@@ -6,46 +6,46 @@ config({ path: '.env' });
 const url = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
 if (!url) throw new Error('DATABASE_URL missing');
 
-/** Default Assets “building blocks” — mirrors founder template scenes. */
+/** Slush founder arc: hook → problem → founder → product → ask (~60s). */
 const rows = [
   {
     key: 'scene-1',
-    description: 'The spark',
-    image: 'https://images.unsplash.com/photo-1614730321146-b6fa6a46bcb4?auto=format&fit=crop&w=1200&q=85',
-    caption: 'Every great company starts with a question.',
+    description: 'Hook',
+    image: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=1400&q=85',
+    caption: 'Something had to change.',
     duration: 6,
     sortOrder: 1,
   },
   {
     key: 'scene-2',
-    description: 'The founder',
-    image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=1000&q=85',
-    caption: 'What if we could build something better?',
-    duration: 8,
+    description: 'The problem',
+    image: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=900&q=85',
+    caption: 'The old way was built for someone else.',
+    duration: 12,
     sortOrder: 2,
   },
   {
     key: 'scene-3',
-    description: 'The people',
-    image: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=900&q=85',
-    caption: 'A shared belief. An extraordinary team.',
-    duration: 7,
+    description: 'The founder',
+    image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=1000&q=85',
+    caption: 'So we stopped waiting for permission.',
+    duration: 14,
     sortOrder: 3,
   },
   {
     key: 'scene-4',
-    description: 'The vision',
-    image: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=900&q=85',
-    caption: 'Built for a world that’s ready for more.',
-    duration: 6,
+    description: 'The product',
+    image: 'https://images.unsplash.com/photo-1551650975-87deedd944c3?auto=format&fit=crop&w=1000&q=85',
+    caption: 'We built the thing we wished existed.',
+    duration: 16,
     sortOrder: 4,
   },
   {
     key: 'scene-5',
-    description: 'The next chapter',
-    image: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=1400&q=85',
-    caption: 'And this is only the beginning.',
-    duration: 5,
+    description: 'The ask',
+    image: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=900&q=85',
+    caption: 'This is only the first frame. Come build with us.',
+    duration: 12,
     sortOrder: 5,
   },
 ];

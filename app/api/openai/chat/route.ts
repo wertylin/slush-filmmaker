@@ -188,7 +188,7 @@ const TOOLS = [
     function: {
       name: 'generate_scene_image',
       description:
-        'Paid/fal.ai: generate a cinematic still for a storyboard scene and apply it in the UI. Requires fal.ai key (falConnected). Defaults to selected scene; prompt defaults from title+caption.',
+        'Paid/fal.ai: generate a cinematic still and add it as a NEW Assets source card (does not overwrite or auto-apply to timeline scenes). Requires fal.ai key (falConnected). Optional sceneId/prompt for context only.',
       parameters: {
         type: 'object',
         properties: {

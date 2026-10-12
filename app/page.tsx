@@ -65,7 +65,7 @@ function ExampleFilm() {
         <Volume2 size={15} />
         <Maximize2 size={15} />
       </div>
-      <div className="example-film-caption">EXAMPLE FOUNDER FILM · 90 SEC</div>
+      <div className="example-film-caption">SLUSH FOUNDER FILM · 90 SEC</div>
     </div>
   );
 }

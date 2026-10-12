@@ -75,7 +75,7 @@ Times are **CURRENT TIMELINE seconds**. Re-read `get_timeline` after mutations.
 ### Generation (fal.ai key connected)
 | Tool | When |
 |------|------|
-| `generate_scene_image` | Generate a cinematic still for a scene (`sceneId?`, `prompt?`) and apply it in Assets |
+| `generate_scene_image` | Generate a cinematic still (`sceneId?`, `prompt?`) — adds a NEW Assets source card (no auto-apply to scenes) |
 
 ### Protocol (default loop)
 1. If not in studio → `list_templates` → optionally `preview_template` → `open_studio` / `start_film_creation`

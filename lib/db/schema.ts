@@ -17,7 +17,7 @@ export const sfProjects = pgTable('sf_projects', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** Assets “building blocks” — still + label (+ scene defaults). */
+/** Assets library — seed stills + generated sources (append-only on generate). */
 export const sfBlocks = pgTable('sf_blocks', {
   id: uuid('id').defaultRandom().primaryKey(),
   /** Stable slug e.g. scene-1 — matches Studio Scene.id defaults. */

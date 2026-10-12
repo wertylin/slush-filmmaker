@@ -43,6 +43,14 @@ export type WebMCPActions = {
   setTab?: (tab: StudioTab) => void;
   newProject?: () => unknown | Promise<unknown>;
   setSceneImage?: (sceneId: string, imageUrl: string) => unknown;
+  /** Append a new Assets source from a generated still (does not mutate scenes). */
+  addGeneratedSource?: (input: {
+    imageUrl: string;
+    label?: string;
+    prompt?: string;
+    caption?: string;
+    duration?: number;
+  }) => unknown | Promise<unknown>;
 };
 
 function shouldIgnoreRegisterError(error: unknown) {
@@ -120,6 +128,7 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
     const controller = new AbortController();
     const registered = new Map<string, Tool>();
     const agentified = hasOpenAIKey();
+    // Warm cache once; fetchTemplates is TTL + inflight deduped.
     void fetchTemplates();
 
     const templateIds = () => {
@@ -308,11 +317,11 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
       });
     }
 
-    if (ref.current.getState && ref.current.setSceneImage) {
+    if (ref.current.getState && ref.current.addGeneratedSource) {
       tools.push({
         name: 'generate_scene_image',
         description:
-          'Paid/fal.ai: generate a cinematic still for a storyboard scene and apply it in the visible Assets/Editor UI. Requires fal.ai BYOK. Defaults to the selected scene; prompt defaults from title+caption. Effect: write + paid.',
+          'Paid/fal.ai: generate a cinematic still and add it as a NEW Assets source card (does not overwrite or auto-apply to timeline scenes). Requires fal.ai BYOK. Optional sceneId/prompt for context. Effect: write + paid.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -322,9 +331,10 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
           additionalProperties: false,
         },
         execute: async (input) => {
-          if (!ref.current.setSceneImage || !ref.current.getState) {
+          if (!ref.current.getState || !ref.current.addGeneratedSource) {
             throw new Error('generate_scene_image unavailable');
           }
+
           let key: string;
           try {
             key = requireFalKey();
@@ -339,30 +349,40 @@ export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true)
           };
           const scenes = Array.isArray(state.scenes) ? state.scenes : [];
           const sceneId = String(input.sceneId || state.selectedSceneId || scenes[0]?.id || '');
-          const scene = scenes.find((s) => s.id === sceneId);
-          if (!scene) throw new Error('Scene not found — call get_studio_state first');
+          const scene = scenes.find((s) => s.id === sceneId) || scenes[0];
 
           const prompt =
             String(input.prompt || '').trim() ||
-            `${scene.title}. ${scene.caption}`.trim();
+            (scene ? `${scene.title}. ${scene.caption}`.trim() : 'Cinematic founder film still');
 
           const generated = await generateSceneImageRemote({
             key,
             prompt,
-            sceneTitle: scene.title,
+            sceneTitle: scene?.title || 'still',
           });
-          ref.current.setSceneImage(scene.id, generated.imageUrl);
-          ref.current.selectScene?.(scene.id);
+
+          const saved = (await ref.current.addGeneratedSource({
+            imageUrl: generated.imageUrl,
+            label: scene?.title || 'Generated still',
+            prompt,
+            caption: scene?.caption,
+            duration: scene?.duration,
+          })) as { source?: { id?: string; key?: string; description?: string; image?: string }; imageUrl?: string };
+
           ref.current.setTab?.('Assets');
-          ref.current.pushActivity?.(`Generated image for ${scene.title}.`);
-          ref.current.setNotice?.(`New still applied to ${scene.title}.`);
+          ref.current.pushActivity?.(`New Assets source: ${saved?.source?.description || prompt.slice(0, 40)}`);
+          ref.current.setNotice?.('New source added — open Assets to see it.');
           return {
-            effect: 'generate_image',
-            sceneId: scene.id,
-            title: scene.title,
+            effect: 'source_added',
+            sceneId: scene?.id || null,
+            title: saved?.source?.description || scene?.title || 'Generated still',
             prompt,
             imageUrl: generated.imageUrl,
             model: generated.model,
+            sourceId: saved?.source?.id || null,
+            sourceKey: saved?.source?.key || null,
+            library: 'source_added',
+            appliedToScene: false,
           };
         },
       });

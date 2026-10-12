@@ -19,7 +19,7 @@ import {
   type TimelineOp,
   type TimelineTrack,
 } from '@/components/timeline';
-import { syncBlockImage } from '@/lib/blocks';
+import { addAssetSource } from '@/lib/blocks';
 import {
   ensureRemoteProject,
   loadRemoteProject,
@@ -261,7 +261,16 @@ export function useStudioProject() {
 
   useEffect(() => {
     if (!ready) return;
-    setTracks((t) => syncDerivedTracks(t, scenes));
+    setTracks((t) => {
+      const next = syncDerivedTracks(t, scenes);
+      // Avoid identity churn → autosave PUT storm
+      try {
+        if (JSON.stringify(t) === JSON.stringify(next)) return t;
+      } catch {
+        /* fall through */
+      }
+      return next;
+    });
   }, [scenes, ready]);
 
   useEffect(() => {
@@ -288,7 +297,7 @@ export function useStudioProject() {
           /* offline / db down — localStorage still has it */
         }
       })();
-    }, 800);
+    }, 1200);
     return () => window.clearTimeout(t);
   }, [scenes, project, website, brief, pendingProposal, playhead, tracks, template, ready]);
 
@@ -406,14 +415,39 @@ export function useStudioProject() {
     [pushActivity],
   );
 
+  /** Assign still to a scene only — does not touch the Assets library. */
   const setSceneImage = useCallback((sceneId: string, imageUrl: string) => {
     const scene = scenesRef.current.find((s) => s.id === sceneId);
     if (!scene) throw new Error('Scene not found');
     setScenes((all) => all.map((s) => (s.id === sceneId ? { ...s, image: imageUrl } : s)));
     setSelected(sceneId);
-    void syncBlockImage(scene.title, imageUrl);
     return { status: 'image_applied' as const, sceneId, imageUrl };
   }, []);
+
+  /**
+   * Generate path: create a NEW Assets source only.
+   * Does not mutate timeline scenes — founder taps the card to apply.
+   */
+  const addGeneratedSource = useCallback(
+    async (input: { imageUrl: string; label?: string; prompt?: string; caption?: string; duration?: number }) => {
+      const source = await addAssetSource({
+        image: input.imageUrl,
+        description: input.label || 'Generated still',
+        caption: input.caption || input.prompt || '',
+        duration: input.duration,
+        prompt: input.prompt,
+      });
+      return {
+        status: 'source_added' as const,
+        sourceId: source.id,
+        key: source.key,
+        description: source.description,
+        imageUrl: source.image,
+        source,
+      };
+    },
+    [],
+  );
 
   const setPendingProposalAction = useCallback((proposal: StoryboardProposal | null) => {
     pendingRef.current = proposal;
@@ -523,6 +557,7 @@ export function useStudioProject() {
     pushActivity,
     selectScene,
     setSceneImage,
+    addGeneratedSource,
     chooseTemplate,
     getState,
     getTimeline,
