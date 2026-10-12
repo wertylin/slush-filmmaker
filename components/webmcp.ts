@@ -1,13 +1,15 @@
 'use client';
 import { useEffect, useRef } from 'react';
-import { templates } from './shared';
+import { isTemplateAvailable, templates } from './shared';
+import { hasOpenAIKey, requireOpenAIKey } from './keys';
+import { STUDIO_TABS, type StoryboardProposal, type StudioTab, type WebsiteBrief } from './studio-actions';
 
 type Tool = {
   name: string;
   description: string;
   inputSchema: object;
   annotations?: { readOnlyHint: boolean };
-  execute: (input: Record<string, unknown>) => unknown;
+  execute: (input: Record<string, unknown>) => unknown | Promise<unknown>;
   signal?: AbortSignal;
 };
 
@@ -22,6 +24,23 @@ declare global {
     __slush_call_tool?: (name: string, input?: Record<string, unknown>) => Promise<unknown>;
   }
 }
+
+export type WebMCPActions = {
+  preview: (id: string) => void;
+  start: (id?: string) => void;
+  getState?: () => unknown;
+  selectScene?: (id: string) => void;
+  setWebsite?: (url: string) => void;
+  setBrief?: (brief: WebsiteBrief | null) => void;
+  setPendingProposal?: (proposal: StoryboardProposal | null) => void;
+  reviewProposal?: (proposalId: string) => unknown;
+  applyProposal?: (proposalId: string) => unknown;
+  pushActivity?: (text: string) => void;
+  setNotice?: (text: string) => void;
+  openSettings?: () => void;
+  setTab?: (tab: StudioTab) => void;
+  newProject?: () => unknown;
+};
 
 function shouldIgnoreRegisterError(error: unknown) {
   if (error == null) return true;
@@ -42,18 +61,51 @@ function getModelContext(): Context | undefined {
   return undefined;
 }
 
-export function useWebMCP(actions: {
-  preview: (id: string) => void;
-  start: (id?: string) => void;
-  getState?: () => unknown;
-  selectScene?: (id: string) => void;
+function normalizeWebsite(raw: string) {
+  const href = raw.startsWith('http') ? raw : `https://${raw}`;
+  const url = new URL(href);
+  if (!url.hostname.includes('.')) throw new Error('Enter a valid website, for example yourstartup.com.');
+  return url;
+}
+
+async function analyzeWebsiteRemote(url: string, key: string) {
+  const res = await fetch('/api/openai/analyze-website', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, url }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { error?: string; brief?: WebsiteBrief };
+  if (!res.ok || !data.brief) throw new Error(data.error || 'Website analysis failed');
+  return data.brief;
+}
+
+async function proposeStoryboardRemote(input: {
+  key: string;
+  brief: unknown;
+  templateId: string;
+  sceneCount?: number;
 }) {
+  const res = await fetch('/api/openai/propose-storyboard', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    proposal?: StoryboardProposal;
+  };
+  if (!res.ok || !data.proposal) throw new Error(data.error || 'Storyboard proposal failed');
+  return data.proposal;
+}
+
+export function useWebMCP(actions: WebMCPActions, reregisterKey: unknown = true) {
   const ref = useRef(actions);
   ref.current = actions;
 
   useEffect(() => {
     const controller = new AbortController();
     const registered = new Map<string, Tool>();
+    const agentified = hasOpenAIKey();
 
     const schema = {
       type: 'object',
@@ -65,20 +117,29 @@ export function useWebMCP(actions: {
     function valid(input: Record<string, unknown>) {
       const id = String(input.templateId);
       if (!templates.some((t) => t.id === id)) throw new Error('Unknown template');
+      if (!isTemplateAvailable(id)) throw new Error('Template is locked — only founder story is available right now.');
       return id;
     }
 
     const tools: Tool[] = [
       {
         name: 'list_templates',
-        description: 'List available founder film template concepts.',
+        description: 'List available founder film template concepts. Effect: read.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         annotations: { readOnlyHint: true },
-        execute: () => templates.map(({ id, name, description, time }) => ({ id, name, description, time })),
+        execute: () =>
+          templates.map(({ id, name, description, time, locked }) => ({
+            id,
+            name,
+            description,
+            time,
+            locked,
+            available: !locked,
+          })),
       },
       {
         name: 'preview_template',
-        description: 'Open a visual template preview in the visible interface. Does not generate video.',
+        description: 'Open a visual template preview in the visible interface. Effect: write (UI only). Does not generate video.',
         inputSchema: schema,
         execute: (input) => {
           const id = valid(input);
@@ -89,7 +150,7 @@ export function useWebMCP(actions: {
       {
         name: 'open_studio',
         description:
-          'Open the Slush Filmmaker studio dashboard in the visible browser tab. Use after a valid OpenAI key is connected.',
+          'Open the Slush Filmmaker studio dashboard in the visible browser tab. Use after a valid OpenAI key is connected. Effect: write (navigation).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -105,7 +166,7 @@ export function useWebMCP(actions: {
       },
       {
         name: 'start_film_creation',
-        description: 'Open the studio with a selected template. Creates no video and incurs no generation charges.',
+        description: 'Open the studio with a selected template. Effect: write (navigation/template). Creates no video and incurs no generation charges.',
         inputSchema: schema,
         execute: (input) => {
           const id = valid(input);
@@ -118,7 +179,8 @@ export function useWebMCP(actions: {
     if (ref.current.getState) {
       tools.push({
         name: 'get_studio_state',
-        description: 'Read the current local demo project, selected scene, and activity.',
+        description:
+          'Read the current local demo project, template, scenes, selection, website, BYOK/agentified flag, pending proposal, activity, and current studio tab. Effect: read.',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         annotations: { readOnlyHint: true },
         execute: () => ref.current.getState?.(),
@@ -128,7 +190,7 @@ export function useWebMCP(actions: {
     if (ref.current.selectScene) {
       tools.push({
         name: 'select_scene',
-        description: 'Select an existing storyboard scene in the visible editor.',
+        description: 'Select an existing storyboard scene in the visible editor. Effect: write (UI selection).',
         inputSchema: {
           type: 'object',
           properties: { sceneId: { type: 'string' } },
@@ -142,10 +204,138 @@ export function useWebMCP(actions: {
       });
     }
 
+    if (ref.current.setTab) {
+      tools.push({
+        name: 'open_studio_tab',
+        description:
+          'Switch the visible studio sidebar view. Use while chatting to take the founder to the right place (e.g. Projects, Templates, Overview). Effect: write (UI navigation).',
+        inputSchema: {
+          type: 'object',
+          properties: { tab: { type: 'string', enum: [...STUDIO_TABS] } },
+          required: ['tab'],
+          additionalProperties: false,
+        },
+        execute: (input) => {
+          const tab = String(input.tab) as StudioTab;
+          if (!STUDIO_TABS.includes(tab)) throw new Error(`Unknown studio tab: ${tab}`);
+          ref.current.setTab?.(tab);
+          ref.current.pushActivity?.(`Opened ${tab}.`);
+          return { status: 'tab_opened', tab };
+        },
+      });
+    }
+
+    if (ref.current.newProject) {
+      tools.push({
+        name: 'new_project',
+        description:
+          'Start a fresh untitled founder film (resets scenes/website/brief/pending proposal to defaults) and open Overview. Effect: write.',
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        execute: () => {
+          const result = ref.current.newProject?.();
+          ref.current.setTab?.('Overview');
+          ref.current.setNotice?.('New project started.');
+          return result;
+        },
+      });
+    }
+
+    if (agentified && ref.current.getState) {
+      tools.push(
+        {
+          name: 'analyze_website',
+          description:
+            'Paid/LLM: fetch a public website and return a structured product/audience/tone brief with sources vs uncertain. Updates studio website + brief. Effect: write + paid.',
+          inputSchema: {
+            type: 'object',
+            properties: { url: { type: 'string' } },
+            required: ['url'],
+            additionalProperties: false,
+          },
+          execute: async (input) => {
+            const key = requireOpenAIKey();
+            const url = normalizeWebsite(String(input.url || ''));
+            ref.current.setWebsite?.(url.href);
+            const brief = await analyzeWebsiteRemote(url.href, key);
+            ref.current.setBrief?.(brief);
+            const host = url.hostname.replace(/^www\./, '');
+            ref.current.pushActivity?.(`Website analyzed: ${host}`);
+            ref.current.setNotice?.(`Analyzed ${host}. Ready to propose a storyboard.`);
+            return { effect: 'analyze', brief };
+          },
+        },
+        {
+          name: 'propose_storyboard',
+          description:
+            'Paid/LLM: propose a storyboard from a brief. Does NOT mutate scenes — stores a pending proposal for human review. Effect: propose.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              brief: {},
+              templateId: { type: 'string', enum: templates.map((t) => t.id) },
+              sceneCount: { type: 'integer', minimum: 3, maximum: 8 },
+            },
+            required: ['brief', 'templateId'],
+            additionalProperties: false,
+          },
+          execute: async (input) => {
+            const key = requireOpenAIKey();
+            const templateId = valid(input);
+            const proposal = await proposeStoryboardRemote({
+              key,
+              brief: input.brief,
+              templateId,
+              sceneCount: input.sceneCount != null ? Number(input.sceneCount) : undefined,
+            });
+            ref.current.setPendingProposal?.(proposal);
+            ref.current.pushActivity?.(`Storyboard proposal ready: ${proposal.proposalId}`);
+            ref.current.setNotice?.('Storyboard proposal ready for review.');
+            return { effect: 'propose', proposal };
+          },
+        },
+        {
+          name: 'review_proposal',
+          description: 'Open the pending proposal diff in the visible UI for human review. Effect: write (UI).',
+          inputSchema: {
+            type: 'object',
+            properties: { proposalId: { type: 'string' } },
+            required: ['proposalId'],
+            additionalProperties: false,
+          },
+          execute: (input) => {
+            if (!ref.current.reviewProposal) throw new Error('review_proposal unavailable');
+            return ref.current.reviewProposal(String(input.proposalId));
+          },
+        },
+        {
+          name: 'apply_proposal',
+          description:
+            'Apply a pending proposal to scenes/project after human review. Hard-fails if proposalId does not match. Effect: write.',
+          inputSchema: {
+            type: 'object',
+            properties: { proposalId: { type: 'string' } },
+            required: ['proposalId'],
+            additionalProperties: false,
+          },
+          execute: (input) => {
+            if (!ref.current.applyProposal) throw new Error('apply_proposal unavailable');
+            const result = ref.current.applyProposal(String(input.proposalId));
+            ref.current.setNotice?.('Storyboard proposal applied.');
+            return result;
+          },
+        },
+      );
+    }
+
     window.__slush_webmcp_tools = window.__slush_webmcp_tools || {};
     window.__slush_call_tool = async (name, input = {}) => {
       const tool = registered.get(name) || window.__slush_webmcp_tools?.[name];
-      if (!tool) throw new Error(`WebMCP tool "${name}" not found`);
+      if (!tool) {
+        if (['analyze_website', 'propose_storyboard', 'review_proposal', 'apply_proposal'].includes(name) && !hasOpenAIKey()) {
+          throw new Error('byok_required');
+        }
+        throw new Error(`WebMCP tool "${name}" not found`);
+      }
       return tool.execute(input);
     };
 
@@ -176,7 +366,7 @@ export function useWebMCP(actions: {
       }
       if (!controller.signal.aborted) controller.abort();
     };
-  }, []);
+  }, [reregisterKey]);
 }
 
 /** Invoke a registered WebMCP tool from UI (same path agents use). */

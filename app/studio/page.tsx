@@ -1,81 +1,841 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { ArrowUpRight, Home, LayoutGrid, Folder, Image as ImageIcon, BookOpen, Settings2, Globe, Sparkles, Play, Check, Send, Film, ChevronRight, X, PanelLeftClose, PanelRightClose, Monitor, KeyRound, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import {
+  ArrowUpRight,
+  Home,
+  LayoutGrid,
+  Folder,
+  Image as ImageIcon,
+  BookOpen,
+  Settings2,
+  Globe,
+  Sparkles,
+  Play,
+  Check,
+  Send,
+  Film,
+  ChevronRight,
+  X,
+  PanelLeftClose,
+  PanelRightClose,
+  Monitor,
+  KeyRound,
+  SlidersHorizontal,
+  ChevronDown,
+} from 'lucide-react';
 import { Logo, photos, templates, TemplateCards, Preview } from '@/components/shared';
-import { useWebMCP } from '@/components/webmcp';
-import { getOpenAIKey, setOpenAIKey } from '@/components/keys';
-type Scene = { id:string; title:string; image:string; duration:number; caption:string };
-type ChatMsg = { id:string; role:'user'|'assistant'|'system'; text:string };
-const initialScenes:Scene[]=[{id:'scene-1',title:'The spark',image:photos.earth,duration:6,caption:'Every great company starts with a question.'},{id:'scene-2',title:'The founder',image:photos.founder,duration:8,caption:'What if we could build something better?'},{id:'scene-3',title:'The people',image:photos.team,duration:7,caption:'A shared belief. An extraordinary team.'},{id:'scene-4',title:'The vision',image:photos.product,duration:6,caption:'Built for a world that’s ready for more.'},{id:'scene-5',title:'The next chapter',image:photos.stage,duration:5,caption:'And this is only the beginning.'}];
-const tabs=[{name:'Overview',icon:Home},{name:'Templates',icon:LayoutGrid},{name:'Projects',icon:Folder},{name:'Assets',icon:ImageIcon},{name:'Docs',icon:BookOpen}];
-const starterChat:ChatMsg[]=[{id:'m0',role:'assistant',text:'Every founder has a story worth telling. Drop a direction — scene tone, audience, or what you want people to feel — and I’ll help you shape it.'}];
-export default function Studio(){
- const [tab,setTab]=useState('Overview');const [scenes,setScenes]=useState(initialScenes);const [selected,setSelected]=useState('scene-1');const [preview,setPreview]=useState<string|null>(null);const [template,setTemplate]=useState('founder');const [website,setWebsite]=useState('');const [project,setProject]=useState('Untitled founder film');const [activity,setActivity]=useState(['Studio opened. Your creative space is ready.']);const [chat,setChat]=useState<ChatMsg[]>(starterChat);const [message,setMessage]=useState('');const [notice,setNotice]=useState('');const [settings,setSettings]=useState(false);const [detailsOpen,setDetailsOpen]=useState(false);const [leftOpen,setLeftOpen]=useState(false);const [rightOpen,setRightOpen]=useState(false);const [ready,setReady]=useState(false);const [openaiKey,setOpenaiKey]=useState('');
- useEffect(()=>{try{const saved=localStorage.getItem('slush-studio');if(saved){const data=JSON.parse(saved);if(Array.isArray(data.scenes)&&data.scenes.length){setScenes(data.scenes);setSelected(data.scenes[0].id);setProject(data.project||'Untitled founder film');setWebsite(data.website||'');}}}catch{}setOpenaiKey(getOpenAIKey());const id=new URLSearchParams(window.location.search).get('template');if(id&&templates.some(t=>t.id===id))setTemplate(id);setReady(true);},[]);
- useEffect(()=>{if(ready)localStorage.setItem('slush-studio',JSON.stringify({scenes,project,website}));},[scenes,project,website,ready]);
- useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),4500);return()=>clearTimeout(t);},[notice]);
- useEffect(()=>{const fn=(e:KeyboardEvent)=>{if(e.key==='Escape'){setPreview(null);setSettings(false);setDetailsOpen(false);}};window.addEventListener('keydown',fn);return()=>window.removeEventListener('keydown',fn);},[]);
- const scene=scenes.find(s=>s.id===selected)||scenes[0];
- function selectScene(id:string){if(!scenes.some(s=>s.id===id))throw new Error('Scene not found');setSelected(id);setTab('Overview');}
- function chooseTemplate(id?:string){setTemplate(id||'founder');setPreview(null);setTab('Overview');pushActivity(`${templates.find(t=>t.id===id)?.name||'Founder'} template selected.`);setNotice('Template selected. Your storyboard is ready to edit.');}
- useWebMCP({preview:setPreview,start:chooseTemplate,getState:()=>({project,template,scenes,selectedSceneId:selected,activity,mode:'local-demo'}),selectScene});
- function start(){try{const url=new URL(website.startsWith('http')?website:`https://${website}`);if(!url.hostname.includes('.'))throw new Error();setWebsite(url.href);setProject(url.hostname.replace('www.','')+' — Founder film');pushActivity(`Website saved: ${url.hostname}. Ready for an analysis integration.`);setNotice('Website saved. Live website analysis needs a connected backend.');}catch{setNotice('Enter a valid website, for example yourstartup.com.');}}
- function pushActivity(text:string){setActivity(a=>[...a,text]);}
- function send(){
-  const text=message.trim();
-  if(!text)return;
-  const userMsg:ChatMsg={id:`u-${Date.now()}`,role:'user',text};
-  const reply:ChatMsg={id:`a-${Date.now()}`,role:'assistant',text:openaiKey
-   ? 'Got it — direction locked. Live generation still needs wiring, but your note is in this session and I’ll treat it as creative brief.'
-   : 'Direction saved. Connect OpenAI in Details → Connections when you want live replies.'};
-  setChat(c=>[...c,userMsg,reply]);
-  pushActivity(`You: ${text}`);
-  setMessage('');
- }
- return <div className="studio-shell"><aside className={`left-sidebar ${leftOpen?'visible':''}`}><Logo/><div className="workspace-tag"><span className="status-dot"/> YOUR CREATIVE SPACE</div><nav className="side-nav">{tabs.map(t=><button key={t.name} className={tab===t.name?'active':''} onClick={()=>{setTab(t.name);setLeftOpen(false);}}><t.icon size={19}/>{t.name}{t.name==='Projects'&&<span className="nav-count">1</span>}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-promo"><img src={photos.stage} alt="Red stage lights"/><div><span className="eyebrow">BUILT FOR THE BOLD</span><h3>Ideas deserve<br/>an audience.</h3><Link href="/">Explore Slush Filmmaker <ArrowUpRight size={14}/></Link></div></div><button className="workspace-user" onClick={()=>setSettings(true)}><span className="user-avatar">Y</span><span>Your workspace<small>Local demo · auto-saved</small></span><Settings2 size={16}/></button></div></aside>
- <div className="studio-main"><header className="studio-topbar"><button className="icon-button sidebar-toggle" onClick={()=>setLeftOpen(!leftOpen)} aria-label="Toggle navigation"><PanelLeftClose size={19}/></button><div className="breadcrumbs"><span>Workspace</span><ChevronRight size={13}/><b>{tab}</b></div><div className="topbar-right"><span className="demo-badge">DEMO WORKSPACE</span><Link href="/" className="icon-button" aria-label="Back to landing"><ArrowUpRight size={18}/></Link><button className="icon-button" onClick={()=>setRightOpen(!rightOpen)} aria-label="Toggle agent panel"><PanelRightClose size={18}/></button></div></header>
- <div className="studio-content">{tab==='Overview'&&<><section className="studio-hero"><img className="studio-hero-bg" src={photos.stage} alt=""/><div className="eyebrow"><span className="status-dot"/> YOUR VISION. YOUR DIRECTOR’S CHAIR.</div><h1>Turn your startup<br/>into a <span>founder film.</span></h1><p>Bring your big idea. Find your story.<br/>Make something worth watching, together with AI.</p><div className="studio-hero-actions"><button className="button primary" onClick={()=>document.getElementById('website')?.focus()}><Sparkles size={17}/> Start with your website <ArrowUpRight size={17}/></button><button className="button outline" onClick={()=>setPreview(template)}><Play size={15}/> Explore template</button></div></section>
- <section className="editor-panel"><div className="editor-toolbar"><span className="traffic-lights"><i/><i/><i/></span><div className="url-input"><Globe size={16}/><input id="website" value={website} onChange={e=>setWebsite(e.target.value)} placeholder="https://yourstartup.com" onKeyDown={e=>e.key==='Enter'&&start()}/></div><button className="button small outline-red" onClick={start}>Use website <ArrowRightIcon/></button></div><div className="editor-title"><div><span className="eyebrow">STORYBOARD / {templates.find(t=>t.id===template)?.category}</span><input aria-label="Project name" value={project} onChange={e=>setProject(e.target.value)}/></div><span className="demo-badge">EDITABLE DEMO</span></div><div className="scene-preview"><img src={scene.image} alt={scene.title}/><div className="scene-gradient"/><span className="frame-label">SCENE {String(scenes.indexOf(scene)+1).padStart(2,'0')} / {String(scenes.length).padStart(2,'0')}</span><div className="scene-caption">{scene.caption}</div><div className="preview-controls"><span><Monitor size={15}/> 16:9 · Storyboard preview</span><span>{scene.duration}s</span></div></div><div className="scene-strip">{scenes.map((s,i)=><button className={selected===s.id?'selected':''} key={s.id} onClick={()=>setSelected(s.id)}><img src={s.image} alt={s.title}/><span>{String(i+1).padStart(2,'0')} · {s.duration}s</span></button>)}</div><div className="scene-edit"><label>SCENE CAPTION<input value={scene.caption} onChange={e=>setScenes(all=>all.map(s=>s.id===scene.id?{...s,caption:e.target.value}:s))}/></label><label className="duration-edit">SECONDS<input type="number" min="1" max="60" value={scene.duration} onChange={e=>setScenes(all=>all.map(s=>s.id===scene.id?{...s,duration:Math.max(1,Math.min(60,Number(e.target.value)||1))}:s))}/></label></div><div className="editor-footer"><span><span className="status-dot"/> Saved on this device</span><span>{scenes.length} scenes · {scenes.reduce((n,s)=>n+s.duration,0)} seconds</span></div></section>
- <div className="onboarding-steps">{[{title:'Bring your story',text:'A website, an idea, a spark.',icon:Globe},{title:'Choose your direction',text:'A template that feels like you.',icon:Film},{title:'Create together',text:'Your vision, an AI creative crew.',icon:Sparkles}].map((s,i)=><button key={s.title} onClick={()=>i===0?document.getElementById('website')?.focus():i===1?setTab('Templates'):setRightOpen(true)}><span className="step-circle">{i+1}</span><div><h4>{s.title}</h4><p>{s.text}</p></div><s.icon size={19}/></button>)}</div></>}
- {tab==='Templates'&&<section className="dashboard-section"><div className="eyebrow">FIND YOUR FORMAT</div><h1>A story for every moment.</h1><p>Pick a starting point. Make it unmistakably yours.</p><TemplateCards onSelect={setPreview}/></section>}
- {tab==='Projects'&&<section className="dashboard-section"><div className="eyebrow">YOUR WORK</div><h1>Stories in the making.</h1><button className="project-card" onClick={()=>setTab('Overview')}><img src={scenes[0].image} alt="Project cover"/><div><h3>{project}</h3><p>{scenes.length} scenes · Saved on this device</p></div><ArrowUpRight/></button></section>}
- {tab==='Assets'&&<section className="dashboard-section"><div className="eyebrow">YOUR VISUAL WORLD</div><h1>The building blocks.</h1><p>Demo imagery used in your storyboard.</p><div className="asset-grid">{scenes.map(s=><button key={s.id} onClick={()=>selectScene(s.id)}><img src={s.image} alt={s.title}/><span>{s.title} <ArrowUpRight size={16}/></span></button>)}</div></section>}
- {tab==='Docs'&&<section className="dashboard-section docs"><div className="eyebrow">A LITTLE DIRECTION</div><h1>Welcome to your studio.</h1><h3>01 — Make yourself at home</h3><p>This local prototype lets you explore templates, save a website, rename your project, and edit scene captions and durations. Your project is saved in this browser.</p><h3>02 — Work with your agent</h3><p>Supported browsers can discover WebMCP tools to list and preview templates, open a template, read the studio state, and select scenes. Human and agent actions update the same workspace.</p><h3>03 — Connect the production pipeline</h3><p>Website analysis, AI chat, media generation, and final video export are not connected in this version. The storyboard uses demonstration photos, not generated video.</p></section>}
- <div className="studio-bottom-note">MADE FOR FOUNDERS. BUILT FOR THE FIRST TAKE. <span>SLUSH FILMMAKER</span></div></div></div>
- <aside className={`right-sidebar ${rightOpen?'visible':''}`}>
-  <div className="agent-header">
-   <div className="agent-avatar"><img src={photos.agent} alt="Sophie assistant avatar"/><span className="status-dot"/></div>
-   <div><h3>Sophie <span>AI</span></h3><p>Creative partner</p></div>
-   <div className="agent-header-actions">
-    <button className={`icon-button ${detailsOpen?'active':''}`} onClick={()=>setDetailsOpen(v=>!v)} aria-label="Toggle details" aria-expanded={detailsOpen}><SlidersHorizontal size={16}/></button>
-    <button className="icon-button" onClick={()=>setSettings(true)} aria-label="Agent settings"><Settings2 size={17}/></button>
-   </div>
-  </div>
+import { useWebMCP, callWebMCPTool } from '@/components/webmcp';
+import { getFalKey, getOpenAIKey, setFalKey, setOpenAIKey, hasFalKey, hasOpenAIKey } from '@/components/keys';
+import { chatWithSophie } from '@/components/sophie-chat';
+import { SOPHIE_STARTER } from '@/prompts/sophie';
+import { useStudioProject, type StudioTab } from '@/components/studio-actions';
 
-  {detailsOpen&&<div className="agent-details">
-   <button className="details-toggle" onClick={()=>setDetailsOpen(false)}>Details <ChevronDown size={14}/></button>
-   <div className="connection-card"><div className="panel-heading"><h4>Connections</h4><button onClick={()=>setSettings(true)}>Manage <ArrowUpRight size={12}/></button></div>{['OpenAI','fal.ai'].map((name,i)=><button className="connection-row" key={name} onClick={()=>setSettings(true)}>{i===0?<Sparkles size={22}/>:<span className="fal-mark">f</span>}<span><b>{name}</b><small>{i===0?'Story & creative direction':'Image & video generation'}</small></span><span className={i===0&&openaiKey?'connection-on':'connection-off'}/></button>)}<div className="connection-note"><KeyRound size={12}/>{openaiKey?'OpenAI key saved in this browser':'Connect APIs to enable generation'}</div></div>
-   <div className="activity-panel"><div className="panel-heading"><h4>Creative activity</h4><span className="demo-badge">LOCAL</span></div><div className="activity-list">{activity.map((a,i)=><div className="activity" key={i}><span className="activity-dot">{i===0?<Sparkles size={12}/>:<Check size={12}/>}</span><div><p>{a}</p><small>{i===0?'Ready when you are':'This session'}</small></div></div>)}</div></div>
-  </div>}
+type ChatMsg = { id: string; role: 'user' | 'assistant' | 'system'; text: string };
+const tabs = [
+  { name: 'Overview' as const, icon: Home },
+  { name: 'Templates' as const, icon: LayoutGrid },
+  { name: 'Projects' as const, icon: Folder },
+  { name: 'Assets' as const, icon: ImageIcon },
+  { name: 'Docs' as const, icon: BookOpen },
+];
+const starterChat: ChatMsg[] = [{ id: 'm0', role: 'assistant', text: SOPHIE_STARTER }];
 
-  <div className="agent-chat" aria-live="polite">
-   {chat.map(m=>(
-    <div key={m.id} className={`chat-bubble ${m.role}`}>
-     {m.role==='assistant'&&<img src={photos.agent} alt="" className="chat-avatar"/>}
-     <div className="chat-bubble-body"><p>{m.text}</p></div>
+export default function Studio() {
+  const studio = useStudioProject();
+  const {
+    scenes,
+    setScenes,
+    selected,
+    setSelected,
+    template,
+    website,
+    setWebsite,
+    project,
+    setProject,
+    activity,
+    brief,
+    pendingProposal,
+    reviewOpen,
+    setReviewOpen,
+    openaiKey,
+    agentified,
+    syncKey,
+    pushActivity,
+    selectScene,
+    chooseTemplate,
+    getState,
+    setBrief,
+    setPendingProposal,
+    reviewProposal,
+    applyProposal,
+    dismissProposal,
+    newProject,
+  } = studio;
+
+  const [tab, setTab] = useState<StudioTab>('Overview');
+  const [preview, setPreview] = useState<string | null>(null);
+  const [chat, setChat] = useState<ChatMsg[]>(starterChat);
+  const [message, setMessage] = useState('');
+  const [notice, setNotice] = useState('');
+  const [settings, setSettings] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [leftOpen, setLeftOpen] = useState(false);
+  const [rightOpen, setRightOpen] = useState(false);
+  const [keyDraft, setKeyDraft] = useState('');
+  const [falDraft, setFalDraft] = useState('');
+  const [falConnected, setFalConnected] = useState(false);
+  const [chatBusy, setChatBusy] = useState(false);
+  const [analyzeBusy, setAnalyzeBusy] = useState(false);
+
+  useEffect(() => {
+    setKeyDraft(openaiKey || getOpenAIKey());
+    setFalDraft(getFalKey());
+    setFalConnected(hasFalKey());
+  }, [openaiKey]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(''), 4500);
+    return () => clearTimeout(t);
+  }, [notice]);
+
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPreview(null);
+        setSettings(false);
+        setDetailsOpen(false);
+        setReviewOpen(false);
+      }
+    };
+    window.addEventListener('keydown', fn);
+    return () => window.removeEventListener('keydown', fn);
+  }, [setReviewOpen]);
+
+  const scene = scenes.find((s) => s.id === selected) || scenes[0];
+
+  function onChooseTemplate(id?: string) {
+    chooseTemplate(id);
+    setPreview(null);
+    setTab('Overview');
+    setNotice('Template selected. Your storyboard is ready to edit.');
+  }
+
+  useWebMCP(
+    {
+      preview: setPreview,
+      start: onChooseTemplate,
+      getState: () => ({ ...getState(), tab }),
+      selectScene: (id) => {
+        selectScene(id);
+        setTab('Overview');
+      },
+      setWebsite,
+      setBrief,
+      setPendingProposal,
+      reviewProposal,
+      applyProposal,
+      pushActivity,
+      setNotice,
+      openSettings: () => setSettings(true),
+      setTab: (next) => {
+        setTab(next);
+        setLeftOpen(false);
+      },
+      newProject,
+    },
+    agentified,
+  );
+
+  async function startWebsite() {
+    if (!hasOpenAIKey() && !openaiKey.trim()) {
+      setSettings(true);
+      setNotice('Connect your OpenAI key to analyze a website.');
+      return;
+    }
+    try {
+      const url = new URL(website.startsWith('http') ? website : `https://${website}`);
+      if (!url.hostname.includes('.')) throw new Error('invalid');
+      setAnalyzeBusy(true);
+      setWebsite(url.href);
+      setProject(url.hostname.replace(/^www\./, '') + ' — Founder film');
+      const result = (await callWebMCPTool('analyze_website', { url: url.href })) as {
+        brief?: { product?: string };
+      };
+      if (result?.brief?.product) {
+        setNotice(`Brief ready: ${result.brief.product}`);
+      }
+      setTab('Overview');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Analysis failed';
+      if (msg === 'byok_required') {
+        setSettings(true);
+        setNotice('Connect your OpenAI key to analyze a website.');
+      } else {
+        setNotice(msg.includes('valid') ? 'Enter a valid website, for example yourstartup.com.' : msg);
+      }
+    } finally {
+      setAnalyzeBusy(false);
+    }
+  }
+
+  async function send() {
+    const text = message.trim();
+    if (!text || chatBusy) return;
+    const key = getOpenAIKey() || openaiKey.trim();
+    if (!key) {
+      setSettings(true);
+      setNotice('Connect your OpenAI key to chat with Sophie.');
+      return;
+    }
+    const userMsg: ChatMsg = { id: `u-${Date.now()}`, role: 'user', text };
+    const history = chat
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => ({ role: m.role as 'user' | 'assistant', text: m.text }));
+    setChat((c) => [...c, userMsg]);
+    setMessage('');
+    setChatBusy(true);
+    pushActivity(`You: ${text}`);
+    try {
+      const snap = getState();
+      const reply = await chatWithSophie({
+        key,
+        history,
+        userText: text,
+        studioState: {
+          project: snap.project,
+          template: snap.template,
+          website: snap.website,
+          selectedSceneId: snap.selectedSceneId,
+          scenes: snap.scenes.map(({ id, title, duration, caption }) => ({ id, title, duration, caption })),
+          activity: snap.activity,
+          brief: snap.brief,
+          pendingProposal: snap.pendingProposal,
+          agentified: snap.agentified,
+          tab,
+        },
+        actions: {
+          getState: () => ({ ...getState(), tab }),
+          preview: setPreview,
+          selectScene: (id) => {
+            selectScene(id);
+            setTab('Overview');
+          },
+          start: onChooseTemplate,
+          setWebsite,
+          setBrief,
+          setPendingProposal,
+          reviewProposal,
+          applyProposal,
+          pushActivity,
+          setNotice,
+          setTab: (next) => {
+            setTab(next);
+            setLeftOpen(false);
+          },
+          newProject,
+        },
+      });
+      setChat((c) => [...c, { id: `a-${Date.now()}`, role: 'assistant', text: reply }]);
+      pushActivity(`Sophie: ${reply.slice(0, 120)}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Chat failed';
+      setChat((c) => [...c, { id: `a-${Date.now()}`, role: 'assistant', text: `Couldn’t reach OpenAI — ${msg}` }]);
+      if (/invalid|401|key|byok/i.test(msg)) setSettings(true);
+    } finally {
+      setChatBusy(false);
+    }
+  }
+
+  function saveConnection() {
+    setOpenAIKey(keyDraft);
+    setFalKey(falDraft);
+    setFalConnected(Boolean(falDraft.trim()));
+    syncKey(keyDraft.trim());
+    setSettings(false);
+    const parts = [
+      keyDraft.trim() ? 'OpenAI' : '',
+      falDraft.trim() ? 'fal.ai' : '',
+    ].filter(Boolean);
+    setNotice(parts.length ? `${parts.join(' + ')} saved in this browser.` : 'API keys cleared.');
+    pushActivity(
+      parts.length
+        ? `Connected: ${parts.join(' + ')}.${keyDraft.trim() ? ' Agent tools unlocked.' : ''}`
+        : 'API keys cleared.',
+    );
+  }
+
+  return (
+    <div className="studio-shell">
+      <aside className={`left-sidebar ${leftOpen ? 'visible' : ''}`}>
+        <Logo />
+        <div className="workspace-tag">
+          <span className="status-dot" /> YOUR CREATIVE SPACE
+        </div>
+        <nav className="side-nav">
+          {tabs.map((t) => (
+            <button
+              key={t.name}
+              className={tab === t.name ? 'active' : ''}
+              onClick={() => {
+                setTab(t.name as StudioTab);
+                setLeftOpen(false);
+              }}
+            >
+              <t.icon size={19} />
+              {t.name}
+              {t.name === 'Projects' && <span className="nav-count">1</span>}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="sidebar-promo">
+            <img src={photos.stage} alt="Red stage lights" />
+            <div>
+              <span className="eyebrow">BUILT FOR THE BOLD</span>
+              <h3>
+                Ideas deserve
+                <br />
+                an audience.
+              </h3>
+              <Link href="/">
+                Explore Slush Filmmaker <ArrowUpRight size={14} />
+              </Link>
+            </div>
+          </div>
+          <button className="workspace-user" onClick={() => setSettings(true)}>
+            <span className="user-avatar">Y</span>
+            <span>
+              Your workspace
+              <small>{agentified ? 'Agentified · auto-saved' : 'Local demo · auto-saved'}</small>
+            </span>
+            <Settings2 size={16} />
+          </button>
+        </div>
+      </aside>
+
+      <div className="studio-main">
+        <header className="studio-topbar">
+          <button className="icon-button sidebar-toggle" onClick={() => setLeftOpen(!leftOpen)} aria-label="Toggle navigation">
+            <PanelLeftClose size={19} />
+          </button>
+          <div className="breadcrumbs">
+            <span>Workspace</span>
+            <ChevronRight size={13} />
+            <b>{tab}</b>
+          </div>
+          <div className="topbar-right">
+            <span className="demo-badge">{agentified ? 'AGENTIFIED' : 'DEMO WORKSPACE'}</span>
+            <Link href="/" className="icon-button" aria-label="Back to landing">
+              <ArrowUpRight size={18} />
+            </Link>
+            <button className="icon-button" onClick={() => setRightOpen(!rightOpen)} aria-label="Toggle agent panel">
+              <PanelRightClose size={18} />
+            </button>
+          </div>
+        </header>
+
+        <div className="studio-content">
+          {tab === 'Overview' && (
+            <>
+              <section className="studio-hero">
+                <img className="studio-hero-bg" src={photos.stage} alt="" />
+                <div className="eyebrow">
+                  <span className="status-dot" /> YOUR VISION. YOUR DIRECTOR’S CHAIR.
+                </div>
+                <h1>
+                  Turn your startup
+                  <br />
+                  into a <span>founder film.</span>
+                </h1>
+                <p>
+                  Bring your big idea. Find your story.
+                  <br />
+                  Make something worth watching, together with AI.
+                </p>
+                <div className="studio-hero-actions">
+                  <button className="button primary" onClick={() => document.getElementById('website')?.focus()}>
+                    <Sparkles size={17} /> Start with your website <ArrowUpRight size={17} />
+                  </button>
+                  <button className="button outline" onClick={() => setPreview(template)}>
+                    <Play size={15} /> Explore template
+                  </button>
+                </div>
+              </section>
+
+              <section className="editor-panel">
+                <div className="editor-toolbar">
+                  <span className="traffic-lights">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  <div className="url-input">
+                    <Globe size={16} />
+                    <input
+                      id="website"
+                      value={website}
+                      onChange={(e) => setWebsite(e.target.value)}
+                      placeholder="https://yourstartup.com"
+                      onKeyDown={(e) => e.key === 'Enter' && void startWebsite()}
+                      disabled={analyzeBusy}
+                    />
+                  </div>
+                  <button className="button small outline-red" onClick={() => void startWebsite()} disabled={analyzeBusy}>
+                    {analyzeBusy ? 'Analyzing…' : 'Use website'} <ArrowRightIcon />
+                  </button>
+                </div>
+                <div className="editor-title">
+                  <div>
+                    <span className="eyebrow">STORYBOARD / {templates.find((t) => t.id === template)?.category}</span>
+                    <input aria-label="Project name" value={project} onChange={(e) => setProject(e.target.value)} />
+                  </div>
+                  <span className="demo-badge">{brief ? 'BRIEF READY' : 'EDITABLE DEMO'}</span>
+                </div>
+                <div className="scene-preview">
+                  <img src={scene.image} alt={scene.title} />
+                  <div className="scene-gradient" />
+                  <span className="frame-label">
+                    SCENE {String(scenes.indexOf(scene) + 1).padStart(2, '0')} / {String(scenes.length).padStart(2, '0')}
+                  </span>
+                  <div className="scene-caption">{scene.caption}</div>
+                  <div className="preview-controls">
+                    <span>
+                      <Monitor size={15} /> 16:9 · Storyboard preview
+                    </span>
+                    <span>{scene.duration}s</span>
+                  </div>
+                </div>
+                <div className="scene-strip">
+                  {scenes.map((s, i) => (
+                    <button className={selected === s.id ? 'selected' : ''} key={s.id} onClick={() => setSelected(s.id)}>
+                      <img src={s.image} alt={s.title} />
+                      <span>
+                        {String(i + 1).padStart(2, '0')} · {s.duration}s
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="scene-edit">
+                  <label>
+                    SCENE CAPTION
+                    <input
+                      value={scene.caption}
+                      onChange={(e) =>
+                        setScenes((all) => all.map((s) => (s.id === scene.id ? { ...s, caption: e.target.value } : s)))
+                      }
+                    />
+                  </label>
+                  <label className="duration-edit">
+                    SECONDS
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      value={scene.duration}
+                      onChange={(e) =>
+                        setScenes((all) =>
+                          all.map((s) =>
+                            s.id === scene.id
+                              ? { ...s, duration: Math.max(1, Math.min(60, Number(e.target.value) || 1)) }
+                              : s,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="editor-footer">
+                  <span>
+                    <span className="status-dot" /> Saved on this device
+                  </span>
+                  <span>
+                    {scenes.length} scenes · {scenes.reduce((n, s) => n + s.duration, 0)} seconds
+                    {pendingProposal ? ' · proposal pending' : ''}
+                  </span>
+                </div>
+              </section>
+
+              <div className="onboarding-steps">
+                {[
+                  { title: 'Bring your story', text: 'A website, an idea, a spark.', icon: Globe },
+                  { title: 'Choose your direction', text: 'A template that feels like you.', icon: Film },
+                  { title: 'Create together', text: 'Your vision, an AI creative crew.', icon: Sparkles },
+                ].map((s, i) => (
+                  <button
+                    key={s.title}
+                    onClick={() =>
+                      i === 0
+                        ? document.getElementById('website')?.focus()
+                        : i === 1
+                          ? setTab('Templates')
+                          : setRightOpen(true)
+                    }
+                  >
+                    <span className="step-circle">{i + 1}</span>
+                    <div>
+                      <h4>{s.title}</h4>
+                      <p>{s.text}</p>
+                    </div>
+                    <s.icon size={19} />
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {tab === 'Templates' && (
+            <section className="dashboard-section">
+              <div className="eyebrow">FIND YOUR FORMAT</div>
+              <h1>A story for every moment.</h1>
+              <p>Pick a starting point. Make it unmistakably yours.</p>
+              <TemplateCards onSelect={setPreview} />
+            </section>
+          )}
+
+          {tab === 'Projects' && (
+            <section className="dashboard-section">
+              <div className="eyebrow">YOUR WORK</div>
+              <h1>Stories in the making.</h1>
+              <button className="project-card" onClick={() => setTab('Overview')}>
+                <img src={scenes[0].image} alt="Project cover" />
+                <div>
+                  <h3>{project}</h3>
+                  <p>
+                    {scenes.length} scenes · Saved on this device
+                  </p>
+                </div>
+                <ArrowUpRight />
+              </button>
+            </section>
+          )}
+
+          {tab === 'Assets' && (
+            <section className="dashboard-section">
+              <div className="eyebrow">YOUR VISUAL WORLD</div>
+              <h1>The building blocks.</h1>
+              <p>Demo imagery used in your storyboard.</p>
+              <div className="asset-grid">
+                {scenes.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => {
+                      selectScene(s.id);
+                      setTab('Overview');
+                    }}
+                  >
+                    <img src={s.image} alt={s.title} />
+                    <span>
+                      {s.title} <ArrowUpRight size={16} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {tab === 'Docs' && (
+            <section className="dashboard-section docs">
+              <div className="eyebrow">A LITTLE DIRECTION</div>
+              <h1>Welcome to your studio.</h1>
+              <h3>01 — Make yourself at home</h3>
+              <p>
+                Explore templates, rename your project, and edit scene captions and durations. Your project is saved in
+                this browser.
+              </p>
+              <h3>02 — Paste a key to agentify</h3>
+              <p>
+                Connect an OpenAI key to unlock Sophie chat and WebMCP tools: analyze_website, propose_storyboard,
+                review_proposal, and apply_proposal. Human and agent share the same workspace.
+              </p>
+              <h3>03 — What’s live vs next</h3>
+              <p>
+                Live: website brief → storyboard proposal → human review/apply. Not yet: image/video generation and
+                final export. Storyboard still uses demonstration photos.
+              </p>
+            </section>
+          )}
+
+          <div className="studio-bottom-note">
+            MADE FOR FOUNDERS. BUILT FOR THE FIRST TAKE. <span>SLUSH FILMMAKER</span>
+          </div>
+        </div>
+      </div>
+
+      <aside className={`right-sidebar ${rightOpen ? 'visible' : ''}`}>
+        <div className="agent-header">
+          <div className="agent-avatar">
+            <img src={photos.agent} alt="Sophie assistant avatar" />
+            <span className="status-dot" />
+          </div>
+          <div>
+            <h3>
+              Sophie <span>AI</span>
+            </h3>
+            <p>{agentified ? 'Agentified partner' : 'Creative partner'}</p>
+          </div>
+          <div className="agent-header-actions">
+            <button
+              className={`icon-button ${detailsOpen ? 'active' : ''}`}
+              onClick={() => setDetailsOpen((v) => !v)}
+              aria-label="Toggle details"
+              aria-expanded={detailsOpen}
+            >
+              <SlidersHorizontal size={16} />
+            </button>
+            <button className="icon-button" onClick={() => setSettings(true)} aria-label="Agent settings">
+              <Settings2 size={17} />
+            </button>
+          </div>
+        </div>
+
+        {detailsOpen && (
+          <div className="agent-details">
+            <button className="details-toggle" onClick={() => setDetailsOpen(false)}>
+              Details <ChevronDown size={14} />
+            </button>
+            <div className="connection-card">
+              <div className="panel-heading">
+                <h4>Connections</h4>
+                <button onClick={() => setSettings(true)}>
+                  Manage <ArrowUpRight size={12} />
+                </button>
+              </div>
+              {[
+                { name: 'OpenAI', ok: agentified, desc: 'Story & agentify tools' },
+                { name: 'fal.ai', ok: falConnected, desc: 'Image & video generation' },
+              ].map((c, i) => (
+                <button className="connection-row" key={c.name} onClick={() => setSettings(true)}>
+                  {i === 0 ? <Sparkles size={22} /> : <span className="fal-mark">f</span>}
+                  <span>
+                    <b>{c.name}</b>
+                    <small>{c.desc}</small>
+                  </span>
+                  <span className={c.ok ? 'connection-on' : 'connection-off'} />
+                </button>
+              ))}
+              <div className="connection-note">
+                <KeyRound size={12} />
+                {agentified && falConnected
+                  ? 'OpenAI + fal.ai saved in this browser'
+                  : agentified
+                    ? 'OpenAI ready — add fal.ai for generation'
+                    : falConnected
+                      ? 'fal.ai ready — add OpenAI to agentify'
+                      : 'Connect OpenAI to agentify this studio'}
+              </div>
+            </div>
+            {pendingProposal && (
+              <div className="activity-panel">
+                <div className="panel-heading">
+                  <h4>Pending proposal</h4>
+                  <button onClick={() => setReviewOpen(true)}>Review</button>
+                </div>
+                <p className="proposal-summary">{pendingProposal.diffSummary}</p>
+              </div>
+            )}
+            <div className="activity-panel">
+              <div className="panel-heading">
+                <h4>Creative activity</h4>
+                <span className="demo-badge">LOCAL</span>
+              </div>
+              <div className="activity-list">
+                {activity.map((a, i) => (
+                  <div className="activity" key={i}>
+                    <span className="activity-dot">{i === 0 ? <Sparkles size={12} /> : <Check size={12} />}</span>
+                    <div>
+                      <p>{a}</p>
+                      <small>{i === 0 ? 'Ready when you are' : 'This session'}</small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="agent-chat" aria-live="polite">
+          {chat.map((m) => (
+            <div key={m.id} className={`chat-bubble ${m.role}`}>
+              {m.role === 'assistant' && <img src={photos.agent} alt="" className="chat-avatar" />}
+              <div className="chat-bubble-body">
+                <p>{m.text}</p>
+              </div>
+            </div>
+          ))}
+          {chatBusy && (
+            <div className="chat-bubble assistant">
+              <img src={photos.agent} alt="" className="chat-avatar" />
+              <div className="chat-bubble-body chat-typing">
+                <p>Thinking…</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="agent-composer">
+          {!agentified && !detailsOpen && (
+            <button type="button" className="agent-connect-chip" onClick={() => setSettings(true)}>
+              <KeyRound size={12} /> Connect OpenAI to agentify
+            </button>
+          )}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void send();
+            }}
+          >
+            <input
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder={agentified ? 'Message Sophie…' : 'Connect OpenAI to chat…'}
+              aria-label="Message Sophie"
+              disabled={chatBusy}
+            />
+            <button aria-label="Send message" disabled={chatBusy || !message.trim()}>
+              <Send size={17} />
+            </button>
+          </form>
+        </div>
+      </aside>
+
+      {preview && <Preview id={preview} close={() => setPreview(null)} useTemplate={() => onChooseTemplate(preview)} />}
+
+      {settings && (
+        <div className="modal-backdrop" onClick={() => setSettings(false)}>
+          <section
+            className="modal settings-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="API connections"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button autoFocus className="close icon-button" aria-label="Close connections" onClick={() => setSettings(false)}>
+              <X />
+            </button>
+            <span className="eyebrow">YOUR CREATIVE CREW</span>
+            <h2>Bring your own keys.</h2>
+            <p>
+              OpenAI agentifies Sophie + WebMCP story tools. fal.ai is for image & video gen. Keys stay in this
+              browser only.
+            </p>
+            <label className="settings-field">
+              OpenAI API key
+              <input
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="sk-..."
+                value={keyDraft}
+                onChange={(e) => setKeyDraft(e.target.value)}
+              />
+            </label>
+            <label className="settings-field">
+              fal.ai API key
+              <input
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="fal-… or key:secret"
+                value={falDraft}
+                onChange={(e) => setFalDraft(e.target.value)}
+              />
+            </label>
+            <div className="settings-info">
+              <KeyRound size={22} />
+              <p>
+                {keyDraft.trim() && falDraft.trim()
+                  ? 'Both keys ready. OpenAI unlocks story tools; fal.ai waits for generation tools.'
+                  : keyDraft.trim()
+                    ? 'OpenAI unlocks analyze_website / propose_storyboard. Add fal.ai for generation.'
+                    : falDraft.trim()
+                      ? 'fal.ai saved — still need OpenAI to agentify Sophie.'
+                      : 'Optional BYOK. Leave blank to keep exploring the demo.'}
+              </p>
+            </div>
+            <button className="button primary" onClick={saveConnection}>
+              Save connections <ArrowUpRight size={17} />
+            </button>
+          </section>
+        </div>
+      )}
+
+      {reviewOpen && pendingProposal && (
+        <div className="modal-backdrop" onClick={() => setReviewOpen(false)}>
+          <section
+            className="modal settings-modal proposal-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Review storyboard proposal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button autoFocus className="close icon-button" aria-label="Close proposal" onClick={() => setReviewOpen(false)}>
+              <X />
+            </button>
+            <span className="eyebrow">PENDING PROPOSAL · {pendingProposal.proposalId}</span>
+            <h2>Review storyboard</h2>
+            <p>{pendingProposal.diffSummary}</p>
+            {pendingProposal.projectTitle && (
+              <p className="proposal-title">
+                Proposed title: <b>{pendingProposal.projectTitle}</b>
+              </p>
+            )}
+            <div className="proposal-diff">
+              {pendingProposal.scenes.map((ps, i) => {
+                const current = scenes[i];
+                return (
+                  <div className="proposal-row" key={ps.id}>
+                    <div>
+                      <small>NOW {current ? current.title : '—'}</small>
+                      <p>{current?.caption || 'No scene'}</p>
+                    </div>
+                    <ChevronRight size={16} />
+                    <div>
+                      <small>
+                        NEW {ps.title} · {ps.duration}s
+                      </small>
+                      <p>{ps.caption}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="proposal-actions">
+              <button className="button outline" onClick={dismissProposal}>
+                Dismiss
+              </button>
+              <button
+                className="button primary"
+                onClick={() => {
+                  try {
+                    applyProposal(pendingProposal.proposalId);
+                    setNotice('Storyboard proposal applied.');
+                  } catch (err) {
+                    setNotice(err instanceof Error ? err.message : 'Apply failed');
+                  }
+                }}
+              >
+                Apply proposal <ArrowUpRight size={17} />
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {notice && (
+        <div className="toast" role="status">
+          <Check size={17} />
+          {notice}
+          <button className="icon-button" aria-label="Dismiss" onClick={() => setNotice('')}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
     </div>
-   ))}
-  </div>
-
-  <div className="agent-composer">
-   {!openaiKey&&!detailsOpen&&<button type="button" className="agent-connect-chip" onClick={()=>setSettings(true)}><KeyRound size={12}/> Connect OpenAI</button>}
-   <form onSubmit={e=>{e.preventDefault();send();}}>
-    <input value={message} onChange={e=>setMessage(e.target.value)} placeholder="Message Sophie…" aria-label="Message Sophie"/>
-    <button aria-label="Send message" disabled={!message.trim()}><Send size={17}/></button>
-   </form>
-  </div>
- </aside>
- {preview&&<Preview id={preview} close={()=>setPreview(null)} useTemplate={()=>chooseTemplate(preview)}/>}{settings&&<div className="modal-backdrop" onClick={()=>setSettings(false)}><section className="modal settings-modal" role="dialog" aria-modal="true" aria-label="API connections" onClick={e=>e.stopPropagation()}><button autoFocus className="close icon-button" aria-label="Close connections" onClick={()=>setSettings(false)}><X/></button><span className="eyebrow">YOUR CREATIVE CREW</span><h2>Bring your own key.</h2><p>Paste an OpenAI key to power Sophie. It stays in this browser only — same storage as the landing page.</p><label className="settings-field">OpenAI API key<input type="password" autoComplete="off" spellCheck={false} placeholder="sk-..." value={openaiKey} onChange={e=>setOpenaiKey(e.target.value)}/></label><div className="settings-info"><KeyRound size={22}/><p>{openaiKey?'Key ready locally. Wire generation next.' : 'Optional BYOK. Leave blank to keep exploring the demo.'}</p></div><button className="button primary" onClick={()=>{setOpenAIKey(openaiKey);setSettings(false);setNotice(openaiKey?'OpenAI key saved in this browser.':'OpenAI key cleared.');pushActivity(openaiKey?'OpenAI key connected.':'OpenAI key cleared.');}}>Save connection <ArrowUpRight size={17}/></button></section></div>}{notice&&<div className="toast" role="status"><Check size={17}/>{notice}<button className="icon-button" aria-label="Dismiss" onClick={()=>setNotice('')}><X size={14}/></button></div>}</div>;
+  );
 }
-function ArrowRightIcon(){return <ArrowUpRight size={14}/>}
+
+function ArrowRightIcon() {
+  return <ArrowUpRight size={14} />;
+}

@@ -189,8 +189,8 @@ small { display: block; color: var(--dim); font-size: 12px; }
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.95fr);
   gap: clamp(28px, 4vw, 56px);
-  align-items: end;
-  padding: 48px 0 72px;
+  align-items: start;
+  padding: 56px 0 72px;
 }
 .entrance-copy { max-width: 560px; }
 .entrance-copy h1 {
@@ -209,6 +209,12 @@ small { display: block; color: var(--dim); font-size: 12px; }
   margin-bottom: 28px;
 }
 
+.entrance-side {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  min-width: 0;
+}
 .example-film {
   position: relative;
   width: 100%;
@@ -347,8 +353,9 @@ small { display: block; color: var(--dim); font-size: 12px; }
 .byok-strip {
   display: grid;
   gap: 8px;
-  max-width: 420px;
-  margin-bottom: 8px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
 }
 .byok-strip label {
   display: inline-flex;
@@ -540,7 +547,19 @@ small { display: block; color: var(--dim); font-size: 12px; }
   background: var(--bg-elevated);
   transition: border-color 0.2s ease, transform 0.2s ease;
 }
-.template-card:hover { border-color: rgba(225, 6, 0, 0.45); transform: translateY(-3px); }
+.template-card:hover:not(.locked):not(:disabled) { border-color: rgba(225, 6, 0, 0.45); transform: translateY(-3px); }
+.template-card.locked,
+.template-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.template-card.locked .template-art img {
+  filter: brightness(0.45) grayscale(0.55);
+}
+.template-card.locked .card-arrow {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+}
 .template-art {
   position: relative;
   aspect-ratio: 3 / 4;
@@ -739,6 +758,54 @@ small { display: block; color: var(--dim); font-size: 12px; }
 .settings-field input:focus {
   border-color: rgba(225, 6, 0, 0.55);
 }
+.proposal-modal {
+  width: min(720px, 100%);
+  max-height: min(86vh, 900px);
+  overflow: auto;
+}
+.proposal-title {
+  color: var(--muted);
+  font-size: 14px;
+}
+.proposal-summary {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 0 0 8px;
+}
+.proposal-diff {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 4px;
+}
+.proposal-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.22);
+}
+.proposal-row small {
+  display: block;
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.proposal-row p {
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 0;
+}
+.proposal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
 .toast {
   position: fixed;
   right: 20px;
@@ -759,13 +826,17 @@ small { display: block; color: var(--dim); font-size: 12px; }
 .studio-shell {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr) 320px;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background: var(--bg);
 }
 .left-sidebar, .right-sidebar {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
   padding: 18px 14px;
@@ -774,9 +845,6 @@ small { display: block; color: var(--dim); font-size: 12px; }
   border-right: 0;
   border-left: 1px solid var(--border);
   gap: 10px;
-  min-height: 0;
-  height: 100vh;
-  overflow: hidden;
 }
 .workspace-tag {
   display: inline-flex;
@@ -851,7 +919,15 @@ small { display: block; color: var(--dim); font-size: 12px; }
   font-weight: 700;
 }
 
-.studio-main { min-width: 0; display: flex; flex-direction: column; }
+.studio-main {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .studio-topbar {
   display: flex;
   align-items: center;
@@ -863,6 +939,7 @@ small { display: block; color: var(--dim); font-size: 12px; }
   position: sticky;
   top: 0;
   z-index: 10;
+  flex-shrink: 0;
 }
 .sidebar-toggle { display: none; }
 .breadcrumbs {
@@ -1260,6 +1337,13 @@ small { display: block; color: var(--dim); font-size: 12px; }
   padding: 0 4px;
   max-width: 100%;
   text-align: center;
+}
+.chat-typing p {
+  color: var(--dim);
+  font-style: italic;
+}
+.chat-bubble-body p {
+  white-space: pre-wrap;
 }
 .agent-connect-chip {
   display: inline-flex;

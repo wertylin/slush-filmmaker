@@ -2,7 +2,7 @@
 
 const STORAGE = 'slush-byok';
 
-type Byok = { openai?: string };
+type Byok = { openai?: string; fal?: string };
 
 function read(): Byok {
   if (typeof window === 'undefined') return {};
@@ -21,11 +21,49 @@ export function getOpenAIKey() {
   return read().openai?.trim() || '';
 }
 
+export function hasOpenAIKey() {
+  const key = getOpenAIKey();
+  return key.startsWith('sk-') && key.length >= 20;
+}
+
+/** Throws `{ error: 'byok_required' }` shaped Error message for WebMCP tools. */
+export function requireOpenAIKey() {
+  const key = getOpenAIKey();
+  if (!key.startsWith('sk-') || key.length < 20) {
+    throw new Error('byok_required');
+  }
+  return key;
+}
+
 export function setOpenAIKey(key: string) {
   const next = read();
   const trimmed = key.trim();
   if (trimmed) next.openai = trimmed;
   else delete next.openai;
+  write(next);
+}
+
+export function getFalKey() {
+  return read().fal?.trim() || '';
+}
+
+export function hasFalKey() {
+  return getFalKey().length >= 16;
+}
+
+export function requireFalKey() {
+  const key = getFalKey();
+  if (key.length < 16) {
+    throw new Error('fal_byok_required');
+  }
+  return key;
+}
+
+export function setFalKey(key: string) {
+  const next = read();
+  const trimmed = key.trim();
+  if (trimmed) next.fal = trimmed;
+  else delete next.fal;
   write(next);
 }
 
