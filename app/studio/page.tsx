@@ -36,14 +36,9 @@ import {
   ProjectEditor,
   type PlaceTarget,
 } from '@/components/project-editor';
-import { addAssetSource, fetchBlocks, mergeAssetLibrary, readLocalSources, type Block } from '@/lib/blocks';
-import {
-  durableImageUrl,
-  ingestMediaFile,
-  pickMediaFiles,
-  type IngestedMedia,
-  type SlushAssetPayload,
-} from '@/lib/ingest-media';
+import { fetchBlocks, mergeAssetLibrary, readLocalSources, type Block } from '@/lib/blocks';
+import { pickMediaFiles, type SlushAssetPayload } from '@/lib/ingest-media';
+import { hydrateCachedVideos, persistUploadedFile } from '@/lib/persist-upload';
 
 type ChatMsg = { id: string; role: 'user' | 'assistant' | 'system'; text: string };
 const tabs = [
@@ -123,16 +118,24 @@ export default function Studio() {
   }, [openaiKey]);
 
   useEffect(() => {
-    setBlocks((prev) => mergeAssetLibrary(prev, readLocalSources()));
+    let cancelled = false;
+    void hydrateCachedVideos(readLocalSources()).then((local) => {
+      if (!cancelled) setBlocks((prev) => mergeAssetLibrary(prev, local));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     if (tab !== 'Assets' && tab !== 'Editor') return;
     let cancelled = false;
-    void fetchBlocks().then((rows) => {
-      if (cancelled) return;
-      setBlocks(mergeAssetLibrary(rows, readLocalSources()));
-    });
+    void fetchBlocks()
+      .then((rows) => mergeAssetLibrary(rows, readLocalSources()))
+      .then((merged) => hydrateCachedVideos(merged))
+      .then((hydrated) => {
+        if (!cancelled) setBlocks(hydrated);
+      });
     return () => {
       cancelled = true;
     };
@@ -271,20 +274,13 @@ export default function Studio() {
     }
   }
 
-  async function placeMediaOnTrack(media: IngestedMedia, target?: PlaceTarget) {
+  async function placeMediaOnTrack(file: File, target?: PlaceTarget) {
     const trackId = target?.trackId || 'broll';
     const start = target?.start ?? playhead;
-    const label = media.fileName.replace(/\.[^.]+$/, '') || media.fileName;
-    const duration = Math.max(1, Math.min(60, Number(media.durationHint) || 6));
     try {
-      const image = await durableImageUrl(media.imageUrl);
-      const source = await addAssetSource({
-        image,
-        description: label,
-        caption: media.kind === 'video' ? `Uploaded video · ${media.fileName}` : `Uploaded · ${media.fileName}`,
-        duration,
-        prompt: label,
-      });
+      const { media, source } = await persistUploadedFile(file);
+      const label = media.fileName.replace(/\.[^.]+$/, '') || media.fileName;
+      const duration = Math.max(1, Math.min(60, Number(media.durationHint) || 6));
       setBlocks((prev) => mergeAssetLibrary(prev, [source, ...readLocalSources()]));
       setBlocksTick((n) => n + 1);
       proposeTimelineEdits({
@@ -297,13 +293,13 @@ export default function Studio() {
               label,
               start,
               duration,
-              image,
+              image: media.imageUrl,
               video: media.videoUrl,
             },
           },
         ],
       });
-      setNotice(`“${label}” → ${trackId} @ ${start.toFixed(1)}s`);
+      setNotice(`“${label}” → ${trackId} @ ${start.toFixed(1)}s (saved)`);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Could not place media');
     }
@@ -319,21 +315,12 @@ export default function Studio() {
     try {
       let added = 0;
       for (const file of files) {
-        const media = await ingestMediaFile(file);
-        const image = await durableImageUrl(media.imageUrl);
-        const label = media.fileName.replace(/\.[^.]+$/, '') || media.fileName;
-        const source = await addAssetSource({
-          image,
-          description: label,
-          caption: media.kind === 'video' ? `Uploaded video · ${media.fileName}` : `Uploaded · ${media.fileName}`,
-          duration: media.durationHint,
-          prompt: label,
-        });
+        const { source } = await persistUploadedFile(file);
         setBlocks((prev) => mergeAssetLibrary(prev, [source, ...readLocalSources()]));
         added += 1;
       }
       setBlocksTick((n) => n + 1);
-      setNotice(added === 1 ? 'Source added to Assets.' : `${added} sources added to Assets.`);
+      setNotice(added === 1 ? 'Source saved to Assets + DB.' : `${added} sources saved to Assets + DB.`);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Upload failed');
     } finally {

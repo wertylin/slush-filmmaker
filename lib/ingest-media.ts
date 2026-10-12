@@ -77,8 +77,11 @@ function captureVideoPoster(videoUrl: string): Promise<{ posterUrl: string; dura
       const seekTo = Math.min(0.1, Math.max(0, dur * 0.02));
       const snap = () => {
         try {
-          const w = video.videoWidth || 1280;
-          const h = video.videoHeight || 720;
+          const vw = video.videoWidth || 1280;
+          const vh = video.videoHeight || 720;
+          const scale = Math.min(1, 960 / Math.max(vw, vh));
+          const w = Math.max(1, Math.round(vw * scale));
+          const h = Math.max(1, Math.round(vh * scale));
           const canvas = document.createElement('canvas');
           canvas.width = w;
           canvas.height = h;
@@ -93,7 +96,7 @@ function captureVideoPoster(videoUrl: string): Promise<{ posterUrl: string; dura
               resolve({ posterUrl, duration: dur });
             },
             'image/jpeg',
-            0.92,
+            0.72,
           );
         } catch (e) {
           fail(e instanceof Error ? e.message : 'Poster capture failed');
@@ -125,26 +128,69 @@ export function pickMediaFiles(files: FileList | File[] | null | undefined): Fil
   return Array.from(files).filter((f) => isImageFile(f) || isVideoFile(f));
 }
 
-const DURABLE_IMAGE_MAX_BYTES = Math.floor(1.8 * 1024 * 1024);
+const DURABLE_MAX_EDGE = 960;
+const DURABLE_JPEG_QUALITY = 0.72;
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Could not encode image'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** Downscale + JPEG so Assets can persist in Postgres / localStorage (never leave blob:). */
+export async function compressImageToDataUrl(source: Blob | string, maxEdge = DURABLE_MAX_EDGE): Promise<string> {
+  const blob =
+    typeof source === 'string'
+      ? await fetch(source).then((r) => {
+          if (!r.ok) throw new Error('Could not read image');
+          return r.blob();
+        })
+      : source;
+
+  const bitmap = await createImageBitmap(blob);
+  try {
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas unavailable');
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const out = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Compress failed'))), 'image/jpeg', DURABLE_JPEG_QUALITY);
+    });
+    return blobToDataUrl(out);
+  } finally {
+    bitmap.close();
+  }
+}
 
 /**
  * Prefer a durable data URL for Assets (localStorage / API).
- * Oversized / remote URLs stay as-is (blob = session-only).
+ * blob: / File must become data: — never persist session-only blob URLs.
  */
 export async function durableImageUrl(imageUrl: string): Promise<string> {
-  if (!imageUrl || imageUrl.startsWith('data:') || !imageUrl.startsWith('blob:')) return imageUrl;
-  try {
-    const blob = await fetch(imageUrl).then((r) => r.blob());
-    if (blob.size > DURABLE_IMAGE_MAX_BYTES) return imageUrl;
-    return await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(new Error('Could not encode image'));
-      reader.readAsDataURL(blob);
-    });
-  } catch {
+  if (!imageUrl) return imageUrl;
+  if (imageUrl.startsWith('data:')) return imageUrl;
+  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://') || imageUrl.startsWith('/')) {
     return imageUrl;
   }
+  if (!imageUrl.startsWith('blob:')) return imageUrl;
+  try {
+    return await compressImageToDataUrl(imageUrl);
+  } catch {
+    throw new Error('Could not persist media preview — try a smaller file');
+  }
+}
+
+/** Image File → durable data URL (skips intermediate blob URL). */
+export async function durableImageFromFile(file: File): Promise<string> {
+  return compressImageToDataUrl(file);
 }
 
 /**

@@ -21,6 +21,7 @@ import {
   type TimelineTrack,
 } from '@/components/timeline';
 import { addAssetSource } from '@/lib/blocks';
+import { durableImageUrl } from '@/lib/ingest-media';
 import {
   ensureRemoteProject,
   loadRemoteProject,
@@ -440,12 +441,13 @@ export function useStudioProject() {
     }) => {
       const scene = scenesRef.current.find((s) => s.id === input.sceneId);
       if (!scene) throw new Error('Scene not found');
+      const durableImage = await durableImageUrl(input.imageUrl);
       setScenes((all) =>
         all.map((s) =>
           s.id === input.sceneId
             ? {
                 ...s,
-                image: input.imageUrl,
+                image: durableImage,
                 video: input.videoUrl || undefined,
                 duration:
                   input.durationHint != null
@@ -457,16 +459,18 @@ export function useStudioProject() {
       );
       setSelected(input.sceneId);
       const source = await addAssetSource({
-        image: input.imageUrl,
+        image: durableImage,
         description: input.label || scene.title || 'Dropped media',
         caption: scene.caption,
         duration: input.durationHint ?? scene.duration,
         prompt: input.label,
+        source: 'upload',
+        video: input.videoUrl,
       });
       return {
         status: 'media_applied' as const,
         sceneId: input.sceneId,
-        imageUrl: input.imageUrl,
+        imageUrl: durableImage,
         videoUrl: input.videoUrl || null,
         source,
       };

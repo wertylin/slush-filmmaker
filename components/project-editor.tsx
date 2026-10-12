@@ -68,7 +68,7 @@ function canAcceptEditorDrop(dt: DataTransfer, allowFiles: boolean, allowAsset: 
 }
 
 function useMediaDropZone(
-  onMedia: ((media: IngestedMedia) => void | Promise<void>) | undefined,
+  onFile: ((file: File) => void | Promise<void>) | undefined,
   onError?: (message: string) => void,
   onAsset?: (asset: SlushAssetPayload) => void | Promise<void>,
 ) {
@@ -76,24 +76,24 @@ function useMediaDropZone(
   const depth = useRef(0);
 
   const onDragEnter = (e: DragEvent) => {
-    if (!canAcceptEditorDrop(e.dataTransfer, !!onMedia, !!onAsset)) return;
+    if (!canAcceptEditorDrop(e.dataTransfer, !!onFile, !!onAsset)) return;
     e.preventDefault();
     depth.current += 1;
     setDragging(true);
   };
   const onDragOver = (e: DragEvent) => {
-    if (!canAcceptEditorDrop(e.dataTransfer, !!onMedia, !!onAsset)) return;
+    if (!canAcceptEditorDrop(e.dataTransfer, !!onFile, !!onAsset)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
   };
   const onDragLeave = (e: DragEvent) => {
-    if (!onMedia && !onAsset) return;
+    if (!onFile && !onAsset) return;
     e.preventDefault();
     depth.current = Math.max(0, depth.current - 1);
     if (depth.current === 0) setDragging(false);
   };
   const onDrop = (e: DragEvent) => {
-    if (!onMedia && !onAsset) return;
+    if (!onFile && !onAsset) return;
     e.preventDefault();
     depth.current = 0;
     setDragging(false);
@@ -110,20 +110,15 @@ function useMediaDropZone(
       return;
     }
 
-    if (!onMedia) return;
+    if (!onFile) return;
     const file = pickMediaFile(e.dataTransfer.files);
     if (!file) {
       onError?.('Drop an image or video file');
       return;
     }
-    void (async () => {
-      try {
-        const media = await ingestMediaFile(file);
-        await onMedia(media);
-      } catch (err) {
-        onError?.(err instanceof Error ? err.message : 'Drop failed');
-      }
-    })();
+    void Promise.resolve(onFile(file)).catch((err) =>
+      onError?.(err instanceof Error ? err.message : 'Drop failed'),
+    );
   };
 
   return { dragging, dropHandlers: { onDragEnter, onDragOver, onDragLeave, onDrop } };
@@ -143,7 +138,7 @@ export function EditorClipsPanel({
   selected: string;
   tracks?: TimelineTrack[];
   onApplyAsset?: (asset: SlushAssetPayload, target?: PlaceTarget) => void;
-  onPlaceMedia?: (media: IngestedMedia, target?: PlaceTarget) => void | Promise<void>;
+  onPlaceMedia?: (file: File, target?: PlaceTarget) => void | Promise<void>;
   onNotice?: (text: string) => void;
 }) {
   const [query, setQuery] = useState('');
@@ -151,10 +146,10 @@ export function EditorClipsPanel({
   const fileRef = useRef<HTMLInputElement>(null);
   const { dragging, dropHandlers } = useMediaDropZone(
     onPlaceMedia
-      ? async (media) => {
+      ? async (file) => {
           setUploadBusy(true);
           try {
-            await onPlaceMedia(media, { trackId: 'broll' });
+            await onPlaceMedia(file, { trackId: 'broll' });
           } finally {
             setUploadBusy(false);
           }
@@ -189,6 +184,7 @@ export function EditorClipsPanel({
           description: b.description,
           duration: b.duration,
           key: b.key,
+          video: b.video || undefined,
         } satisfies SlushAssetPayload,
       };
     });
@@ -222,8 +218,7 @@ export function EditorClipsPanel({
           e.target.value = '';
           if (!file || !onPlaceMedia) return;
           setUploadBusy(true);
-          void ingestMediaFile(file)
-            .then((media) => onPlaceMedia(media, { trackId: 'broll' }))
+          void Promise.resolve(onPlaceMedia(file, { trackId: 'broll' }))
             .catch((err) => onNotice?.(err instanceof Error ? err.message : 'Upload failed'))
             .finally(() => setUploadBusy(false));
         }}
@@ -398,7 +393,7 @@ export function ProjectEditor({
   /** Place library asset as a layered clip (CapCut-style) */
   onApplyAsset?: (asset: SlushAssetPayload, target?: PlaceTarget) => void;
   /** File drop → library + layered clip */
-  onPlaceMedia?: (media: IngestedMedia, target?: PlaceTarget) => void | Promise<void>;
+  onPlaceMedia?: (file: File, target?: PlaceTarget) => void | Promise<void>;
 }) {
   const [playing, setPlaying] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -416,10 +411,10 @@ export function ProjectEditor({
 
   const { dragging, dropHandlers } = useMediaDropZone(
     onPlaceMedia
-      ? async (media) => {
+      ? async (file) => {
           setIngestBusy(true);
           try {
-            await onPlaceMedia(media, placeOnTrack('broll'));
+            await onPlaceMedia(file, placeOnTrack('broll'));
           } finally {
             setIngestBusy(false);
           }
@@ -467,8 +462,7 @@ export function ProjectEditor({
       return;
     }
     setIngestBusy(true);
-    void ingestMediaFile(file)
-      .then((media) => onPlaceMedia(media, target))
+    void Promise.resolve(onPlaceMedia(file, target))
       .catch((err) => onNotice?.(err instanceof Error ? err.message : 'Drop failed'))
       .finally(() => setIngestBusy(false));
   }
