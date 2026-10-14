@@ -27,15 +27,12 @@ import {
 import { Logo, photos, TemplateCards, Preview } from '@/components/shared';
 import { useWebMCP } from '@/components/webmcp';
 import {
-  fetchGuestAvailability,
   getFalKey,
   getOpenAIKey,
   hasFalKey,
   hasOpenAIKey,
-  isGuestMode,
   openaiAuthBody,
   setFalKey,
-  setGuestMode,
   setOpenAIKey,
 } from '@/components/keys';
 import { chatWithSophie } from '@/components/sophie-chat';
@@ -113,12 +110,6 @@ export default function Studio() {
   const [rightOpen, setRightOpen] = useState(false);
   const [keyDraft, setKeyDraft] = useState('');
   const [falDraft, setFalDraft] = useState('');
-  const [guestMode, setGuestModeUi] = useState(false);
-  const [guestAvail, setGuestAvail] = useState<{ openai: boolean; fal: boolean; available: boolean }>({
-    openai: false,
-    fal: false,
-    available: false,
-  });
   const [falConnected, setFalConnected] = useState(false);
   const [chatBusy, setChatBusy] = useState(false);
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -131,14 +122,8 @@ export default function Studio() {
   useEffect(() => {
     setKeyDraft(openaiKey || getOpenAIKey());
     setFalDraft(getFalKey());
-    setGuestModeUi(isGuestMode());
     setFalConnected(hasFalKey());
   }, [openaiKey]);
-
-  useEffect(() => {
-    if (!settings) return;
-    void fetchGuestAvailability().then(setGuestAvail).catch(() => {});
-  }, [settings]);
 
   useEffect(() => {
     let cancelled = false;
@@ -406,7 +391,7 @@ export default function Studio() {
     if (!text || chatBusy) return;
     if (!hasOpenAIKey() && !openaiKey.trim()) {
       setSettings(true);
-      setNotice('Connect OpenAI or use Slush guest to chat with Sophie.');
+      setNotice('Connect your OpenAI API key to chat with Sophie.');
       return;
     }
     const auth = openaiAuthBody();
@@ -475,30 +460,6 @@ export default function Studio() {
   }
 
   function saveConnection() {
-    if (guestMode) {
-      if (!guestAvail.available) {
-        setNotice('Slush guest is not configured on the server yet.');
-        return;
-      }
-      setGuestMode(true);
-      setKeyDraft('');
-      setFalDraft('');
-      setFalConnected(guestAvail.fal);
-      syncKey('guest');
-      setSettings(false);
-      setNotice(
-        `Slush guest on — using server keys (${[
-          guestAvail.openai ? 'OpenAI' : null,
-          guestAvail.fal ? 'fal.ai' : null,
-        ]
-          .filter(Boolean)
-          .join(' + ')}).`,
-      );
-      pushActivity('Slush guest connected. Agent tools unlocked via server keys.');
-      return;
-    }
-
-    setGuestMode(false);
     setOpenAIKey(keyDraft);
     setFalKey(falDraft);
     const falOk = falDraft.trim().length >= 16;
@@ -911,15 +872,13 @@ export default function Studio() {
               ))}
               <div className="connection-note">
                 <KeyRound size={12} />
-                {isGuestMode()
-                  ? 'Slush guest — server keys'
-                  : agentified && falConnected
-                    ? 'OpenAI + fal.ai saved in this browser'
-                    : agentified
-                      ? 'OpenAI ready — add fal.ai for generation'
-                      : falConnected
-                        ? 'fal.ai ready — add OpenAI to agentify'
-                        : 'Connect OpenAI or Slush guest'}
+                {agentified && falConnected
+                  ? 'OpenAI + fal.ai saved in this browser'
+                  : agentified
+                    ? 'OpenAI ready — add fal.ai for generation'
+                    : falConnected
+                      ? 'fal.ai ready — add OpenAI to agentify'
+                      : 'Connect your OpenAI key'}
               </div>
             </div>
             {pendingProposal && (
@@ -973,7 +932,7 @@ export default function Studio() {
         <div className="agent-composer">
           {!agentified && !detailsOpen && (
             <button type="button" className="agent-connect-chip" onClick={() => setSettings(true)}>
-              <KeyRound size={12} /> Connect OpenAI or Slush guest
+              <KeyRound size={12} /> Connect OpenAI key
             </button>
           )}
           <form
@@ -1014,33 +973,8 @@ export default function Studio() {
             <h2>Bring your own keys.</h2>
             <p>
               OpenAI agentifies Sophie + WebMCP story tools. fal.ai is for image & video gen. Keys stay in this
-              browser only — or use Slush guest to run on our server keys.
+              browser only.
             </p>
-            {guestAvail.available ? (
-              <button
-                type="button"
-                className={`guest-mode-card ${guestMode ? 'active' : ''}`}
-                onClick={() => {
-                  setGuestModeUi(true);
-                  setKeyDraft('');
-                  setFalDraft('');
-                }}
-              >
-                <span className="guest-mode-card-top">
-                  <b>Slush guest</b>
-                  <small>{guestMode ? 'Selected' : 'No BYOK needed'}</small>
-                </span>
-                <p>
-                  Use Slush-hosted keys
-                  {guestAvail.openai && guestAvail.fal
-                    ? ' (OpenAI + fal.ai)'
-                    : guestAvail.openai
-                      ? ' (OpenAI)'
-                      : ' (fal.ai)'}
-                  . Secrets never leave the server.
-                </p>
-              </button>
-            ) : null}
             <label className="settings-field">
               OpenAI API key
               <input
@@ -1048,12 +982,8 @@ export default function Studio() {
                 autoComplete="off"
                 spellCheck={false}
                 placeholder="sk-..."
-                value={guestMode ? '' : keyDraft}
-                disabled={guestMode}
-                onChange={(e) => {
-                  setGuestModeUi(false);
-                  setKeyDraft(e.target.value);
-                }}
+                value={keyDraft}
+                onChange={(e) => setKeyDraft(e.target.value)}
               />
             </label>
             <label className="settings-field">
@@ -1063,32 +993,24 @@ export default function Studio() {
                 autoComplete="off"
                 spellCheck={false}
                 placeholder="fal-… or key:secret"
-                value={guestMode ? '' : falDraft}
-                disabled={guestMode}
-                onChange={(e) => {
-                  setGuestModeUi(false);
-                  setFalDraft(e.target.value);
-                }}
+                value={falDraft}
+                onChange={(e) => setFalDraft(e.target.value)}
               />
             </label>
             <div className="settings-info">
               <KeyRound size={22} />
               <p>
-                {guestMode
-                  ? 'Slush guest: Sophie + tools use server .env keys. Paste your own keys anytime to switch off guest.'
-                  : keyDraft.trim() && falDraft.trim()
-                    ? 'Both keys ready. OpenAI unlocks Sophie; fal.ai unlocks generate_scene_image.'
-                    : keyDraft.trim()
-                      ? 'OpenAI unlocks Sophie + story tools. Add fal.ai to generate stills.'
-                      : falDraft.trim()
-                        ? 'fal.ai saved — still need OpenAI to agentify Sophie.'
-                        : guestAvail.available
-                          ? 'Paste BYOK keys, or pick Slush guest above.'
-                          : 'Optional BYOK. Leave blank to keep exploring the demo.'}
+                {keyDraft.trim() && falDraft.trim()
+                  ? 'Both keys ready. OpenAI unlocks Sophie; fal.ai unlocks generate_scene_image.'
+                  : keyDraft.trim()
+                    ? 'OpenAI unlocks Sophie + story tools. Add fal.ai to generate stills.'
+                    : falDraft.trim()
+                      ? 'fal.ai saved — still need OpenAI to agentify Sophie.'
+                      : 'Paste your OpenAI key to unlock Sophie. Leave blank to keep exploring the demo.'}
               </p>
             </div>
             <button className="button primary" onClick={saveConnection}>
-              {guestMode ? 'Use Slush guest' : 'Save connections'} <ArrowUpRight size={17} />
+              Save connections <ArrowUpRight size={17} />
             </button>
           </section>
         </div>

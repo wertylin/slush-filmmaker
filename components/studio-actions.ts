@@ -570,11 +570,6 @@ export function useStudioProject() {
   }, [pushActivity]);
 
   const syncKey = useCallback((key: string) => {
-    if (key === 'guest') {
-      setOpenaiKey('');
-      setAgentified(true);
-      return;
-    }
     setOpenaiKey(key);
     setAgentified(Boolean(key.trim()) || hasOpenAIKey());
   }, []);

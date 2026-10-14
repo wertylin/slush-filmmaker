@@ -1,29 +1,15 @@
-/** Resolve provider keys on the server. Never return env secrets to the client. */
+/** Resolve provider keys on the server. BYOK only — never fall back to server env secrets. */
 
 export type KeyAuthBody = {
   key?: string;
   guest?: boolean;
 };
 
-export function guestOpenAIAvailable() {
-  const k = process.env.OPENAI_API_KEY?.trim() || '';
-  return k.startsWith('sk-') && k.length >= 20;
-}
-
-export function guestFalAvailable() {
-  const k = (process.env.FAL_AI_KEY || process.env.FAL_KEY || '').trim();
-  return k.length >= 16;
-}
-
 export function resolveOpenAIKey(body: KeyAuthBody):
-  | { ok: true; key: string; source: 'byok' | 'guest' }
+  | { ok: true; key: string; source: 'byok' }
   | { ok: false; error: string; status: number } {
   if (body.guest === true) {
-    const env = process.env.OPENAI_API_KEY?.trim() || '';
-    if (!env.startsWith('sk-') || env.length < 20) {
-      return { ok: false, error: 'Slush guest OpenAI is not configured on the server', status: 503 };
-    }
-    return { ok: true, key: env, source: 'guest' };
+    return { ok: false, error: 'Guest mode is disabled. Provide your own OpenAI key.', status: 401 };
   }
 
   const key = String(body.key || '').trim();
@@ -34,14 +20,10 @@ export function resolveOpenAIKey(body: KeyAuthBody):
 }
 
 export function resolveFalKey(body: KeyAuthBody):
-  | { ok: true; key: string; source: 'byok' | 'guest' }
+  | { ok: true; key: string; source: 'byok' }
   | { ok: false; error: string; status: number } {
   if (body.guest === true) {
-    const env = (process.env.FAL_AI_KEY || process.env.FAL_KEY || '').trim();
-    if (env.length < 16) {
-      return { ok: false, error: 'Slush guest fal.ai is not configured on the server', status: 503 };
-    }
-    return { ok: true, key: env, source: 'guest' };
+    return { ok: false, error: 'Guest mode is disabled. Provide your own fal.ai key.', status: 401 };
   }
 
   const key = String(body.key || '').trim();
